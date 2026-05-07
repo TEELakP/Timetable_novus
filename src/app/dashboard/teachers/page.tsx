@@ -15,7 +15,8 @@ import {
   CalendarPlus,
   MapPin,
   User,
-  MoreVertical
+  MoreVertical,
+  Mail
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -77,6 +78,7 @@ export default function TeachersPage() {
 
   // Single Add Teacher State
   const [newTeacherName, setNewTeacherName] = useState("")
+  const [newTeacherEmail, setNewTeacherEmail] = useState("")
   const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([])
   const [selectedCampuses, setSelectedCampuses] = useState<Campus[]>(['Online'])
 
@@ -84,6 +86,14 @@ export default function TeachersPage() {
   const [newAvailDay, setNewAvailDay] = useState<Day>('Monday')
   const [newAvailStart, setNewAvailStart] = useState("09:00")
   const [newAvailEnd, setNewAvailEnd] = useState("17:00")
+
+  // Auto-generate email when name changes in Single Add
+  useEffect(() => {
+    if (!newTeacherEmail && newTeacherName) {
+      const suggestedEmail = newTeacherName.trim().toLowerCase().replace(/\s+/g, '') + "@novus.edu.au"
+      setNewTeacherEmail(suggestedEmail)
+    }
+  }, [newTeacherName, newTeacherEmail])
 
   // Auto-calculate suggested end time based on unit requirements
   useEffect(() => {
@@ -102,9 +112,11 @@ export default function TeachersPage() {
     const names = bulkInput.split('\n').filter(n => n.trim() !== "")
     names.forEach((name, idx) => {
       const id = `t-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`
+      const email = name.trim().toLowerCase().replace(/\s+/g, '') + "@novus.edu.au"
       const teacherData: Teacher = {
         id,
         name: name.trim(),
+        email: email,
         qualifiedUnits: [],
         campuses: ['Online'],
         availability: []
@@ -113,7 +125,7 @@ export default function TeachersPage() {
     })
     setBulkInput("")
     setIsBulkOpen(false)
-    toast({ title: "Bulk Add Started", description: `Adding ${names.length} teachers...` })
+    toast({ title: "Bulk Add Started", description: `Adding ${names.length} teachers with institutional emails...` })
   }
 
   const handleSingleAdd = () => {
@@ -122,12 +134,14 @@ export default function TeachersPage() {
     const teacherData: Teacher = {
       id,
       name: newTeacherName.trim(),
+      email: newTeacherEmail.trim() || (newTeacherName.trim().toLowerCase().replace(/\s+/g, '') + "@novus.edu.au"),
       qualifiedUnits: selectedUnitIds,
       campuses: selectedCampuses,
       availability: []
     }
     setDocumentNonBlocking(doc(db, "teachers", id), teacherData, { merge: true })
     setNewTeacherName("")
+    setNewTeacherEmail("")
     setSelectedUnitIds([])
     setSelectedCampuses(['Online'])
     setIsSingleOpen(false)
@@ -256,6 +270,7 @@ export default function TeachersPage() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Bulk Add Teachers</DialogTitle>
+                <DialogDescription>Emails will be auto-generated as name@novus.edu.au</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <Label>Enter teacher names (one per line)</Label>
@@ -284,14 +299,25 @@ export default function TeachersPage() {
                 <DialogDescription>Input basic details and initial connections.</DialogDescription>
               </DialogHeader>
               <div className="space-y-6 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Full Name</Label>
-                  <Input 
-                    id="name" 
-                    placeholder="e.g. Dr. Sarah Wilson" 
-                    value={newTeacherName}
-                    onChange={(e) => setNewTeacherName(e.target.value)}
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Full Name</Label>
+                    <Input 
+                      id="name" 
+                      placeholder="e.g. Dr. Sarah Wilson" 
+                      value={newTeacherName}
+                      onChange={(e) => setNewTeacherName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email Address</Label>
+                    <Input 
+                      id="email" 
+                      placeholder="name@novus.edu.au" 
+                      value={newTeacherEmail}
+                      onChange={(e) => setNewTeacherEmail(e.target.value)}
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">
@@ -359,7 +385,7 @@ export default function TeachersPage() {
             <Table>
               <TableHeader className="bg-muted/30">
                 <TableRow>
-                  <TableHead>Teacher Name</TableHead>
+                  <TableHead>Teacher Name & Email</TableHead>
                   <TableHead>Qualified Units</TableHead>
                   <TableHead>Campuses</TableHead>
                   <TableHead>Weekly Availability</TableHead>
@@ -373,58 +399,64 @@ export default function TeachersPage() {
                   return (
                     <TableRow key={teacher.id} className="group">
                       <TableCell className="font-semibold">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="link" className="p-0 h-auto font-bold text-foreground hover:underline decoration-primary underline-offset-4">
-                              {teacher.name}
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent className="w-80 p-0 overflow-hidden shadow-2xl border-primary/10">
-                            <DropdownMenuLabel className="bg-primary text-primary-foreground p-3 flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <User className="h-4 w-4" />
-                                Assigned Classes ({teacherSessions.length})
-                              </div>
-                            </DropdownMenuLabel>
-                            <DropdownMenuSeparator className="m-0" />
-                            {teacherSessions.length > 0 ? (
-                              <div className="max-h-[400px] overflow-y-auto">
-                                {teacherSessions.map((s) => {
-                                  const unit = units?.find(u => u.id === s.unitId)
-                                  return (
-                                    <div key={s.id} className="p-4 border-b last:border-0 hover:bg-muted/50 group/session transition-colors">
-                                      <div className="flex items-start justify-between">
-                                        <div className="space-y-1.5">
-                                          <div className="font-bold text-sm">{unit?.name}</div>
-                                          <div className="flex items-center gap-2 font-black text-[10px] text-primary">
-                                            <CalendarIcon className="h-3 w-3" />
-                                            {s.day}, {s.startTime} - {s.endTime}
+                        <div className="flex flex-col">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="link" className="p-0 h-auto font-bold text-foreground hover:underline decoration-primary underline-offset-4 justify-start">
+                                {teacher.name}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent className="w-80 p-0 overflow-hidden shadow-2xl border-primary/10">
+                              <DropdownMenuLabel className="bg-primary text-primary-foreground p-3 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <User className="h-4 w-4" />
+                                  Assigned Classes ({teacherSessions.length})
+                                </div>
+                              </DropdownMenuLabel>
+                              <DropdownMenuSeparator className="m-0" />
+                              {teacherSessions.length > 0 ? (
+                                <div className="max-h-[400px] overflow-y-auto">
+                                  {teacherSessions.map((s) => {
+                                    const unit = units?.find(u => u.id === s.unitId)
+                                    return (
+                                      <div key={s.id} className="p-4 border-b last:border-0 hover:bg-muted/50 group/session transition-colors">
+                                        <div className="flex items-start justify-between">
+                                          <div className="space-y-1.5">
+                                            <div className="font-bold text-sm">{unit?.name}</div>
+                                            <div className="flex items-center gap-2 font-black text-[10px] text-primary">
+                                              <CalendarIcon className="h-3 w-3" />
+                                              {s.day}, {s.startTime} - {s.endTime}
+                                            </div>
+                                            <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-medium">
+                                              <MapPin className="h-3 w-3" />
+                                              Room: {s.room}
+                                            </div>
                                           </div>
-                                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-medium">
-                                            <MapPin className="h-3 w-3" />
-                                            Room: {s.room}
+                                          <div className="flex flex-col gap-1 opacity-0 group-hover/session:opacity-100 transition-opacity">
+                                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditSessionDialog(s)}>
+                                              <Edit2 className="h-3 w-3" />
+                                            </Button>
+                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteSession(s.id)}>
+                                              <Trash2 className="h-3 w-3" />
+                                            </Button>
                                           </div>
-                                        </div>
-                                        <div className="flex flex-col gap-1 opacity-0 group-hover/session:opacity-100 transition-opacity">
-                                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditSessionDialog(s)}>
-                                            <Edit2 className="h-3 w-3" />
-                                          </Button>
-                                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteSession(s.id)}>
-                                            <Trash2 className="h-3 w-3" />
-                                          </Button>
                                         </div>
                                       </div>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            ) : (
-                              <div className="p-6 text-center text-xs text-muted-foreground italic bg-muted/20">
-                                No sessions currently assigned.
-                              </div>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                                    )
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="p-6 text-center text-xs text-muted-foreground italic bg-muted/20">
+                                  No sessions currently assigned.
+                                </div>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Mail className="h-2.5 w-2.5" />
+                            {teacher.email || 'N/A'}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1 max-w-[200px]">
@@ -481,14 +513,42 @@ export default function TeachersPage() {
                                 <DialogDescription>Update qualifications, campus assignments, and weekly availability.</DialogDescription>
                               </DialogHeader>
                               {editingTeacher && (
-                                <Tabs defaultValue="qualifications" className="flex-1 overflow-hidden flex flex-col">
+                                <Tabs defaultValue="profile" className="flex-1 overflow-hidden flex flex-col">
                                   <div className="px-6 border-b">
                                     <TabsList className="bg-transparent h-12 w-full justify-start gap-4">
+                                      <TabsTrigger value="profile" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none shadow-none h-full">General Info</TabsTrigger>
                                       <TabsTrigger value="qualifications" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none shadow-none h-full">Qualifications</TabsTrigger>
                                       <TabsTrigger value="availability" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none shadow-none h-full">Availability</TabsTrigger>
                                     </TabsList>
                                   </div>
                                   <div className="flex-1 overflow-y-auto p-6">
+                                    <TabsContent value="profile" className="m-0 space-y-6">
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                          <Label>Full Name</Label>
+                                          <Input 
+                                            value={editingTeacher.name} 
+                                            onChange={e => {
+                                              const updated = {...editingTeacher, name: e.target.value};
+                                              setEditingTeacher(updated);
+                                              setDocumentNonBlocking(doc(db, "teachers", updated.id), updated, { merge: true });
+                                            }} 
+                                          />
+                                        </div>
+                                        <div className="space-y-2">
+                                          <Label>Email Address</Label>
+                                          <Input 
+                                            value={editingTeacher.email || ""} 
+                                            onChange={e => {
+                                              const updated = {...editingTeacher, email: e.target.value};
+                                              setEditingTeacher(updated);
+                                              setDocumentNonBlocking(doc(db, "teachers", updated.id), updated, { merge: true });
+                                            }} 
+                                          />
+                                        </div>
+                                      </div>
+                                    </TabsContent>
+                                    
                                     <TabsContent value="qualifications" className="m-0 space-y-8">
                                       <div className="space-y-4">
                                         <div className="flex items-center gap-2 text-sm font-semibold text-primary">
@@ -634,6 +694,7 @@ export default function TeachersPage() {
                  <Badge variant="outline" className="text-[10px] h-4 bg-background uppercase">Qualified Faculty</Badge>
                </div>
                <p className="text-sm font-bold">{schedulingTeacher?.name}</p>
+               <p className="text-[10px] text-muted-foreground">{schedulingTeacher?.email}</p>
              </div>
 
             <div className="space-y-2">
