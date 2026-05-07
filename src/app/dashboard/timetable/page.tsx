@@ -1,3 +1,4 @@
+
 "use client"
 
 import React, { useState } from "react"
@@ -12,13 +13,15 @@ import {
   Plus,
   Loader2,
   Trash2,
-  DoorOpen
+  DoorOpen,
+  Layers
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { DAYS, HOURS } from "@/lib/mock-data"
 import { generateInitialTimetable } from "@/ai/flows/generate-initial-timetable"
 import { TimetableEntry, Teacher, Unit, Room, Day } from "@/lib/types"
@@ -376,6 +379,8 @@ export default function TimetablePage() {
                   
                   if (col < 2 || row < 2) return null;
 
+                  const otherActiveClasses = sessions?.filter(s => s.unitId === entry.unitId && s.id !== entry.id) || []
+
                   return (
                     <div 
                       key={entry.id} 
@@ -387,7 +392,7 @@ export default function TimetablePage() {
                     >
                       <div 
                         className={cn(
-                          "w-full h-full rounded p-2 text-white shadow transition-all hover:scale-[1.01] cursor-pointer overflow-hidden flex flex-col relative group border border-white/10",
+                          "w-full h-full rounded p-2 text-white shadow transition-all hover:scale-[1.01] overflow-hidden flex flex-col relative group border border-white/10",
                           unit?.type === 'theory' ? "bg-blue-600 hover:bg-blue-700" : "bg-orange-600 hover:bg-orange-700",
                         )}
                       >
@@ -405,7 +410,42 @@ export default function TimetablePage() {
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
-                        <p className="text-[11px] font-bold line-clamp-2 leading-tight mb-1">{unit?.name}</p>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <p className="text-[11px] font-bold line-clamp-2 leading-tight mb-1 cursor-pointer hover:underline">
+                              {unit?.name}
+                            </p>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-56">
+                            <DropdownMenuLabel className="flex items-center gap-2">
+                              <Layers className="h-4 w-4" />
+                              Active Classes: {unit?.name}
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {otherActiveClasses.length > 0 ? (
+                              otherActiveClasses.map((ac) => {
+                                const acTeacher = teachers?.find(t => t.id === ac.teacherId)
+                                return (
+                                  <DropdownMenuItem key={ac.id} className="flex flex-col items-start gap-1 py-2">
+                                    <div className="font-semibold text-xs">{ac.day} {ac.startTime}-{ac.endTime}</div>
+                                    <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                      <DoorOpen className="h-3 w-3" /> {ac.room}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                      <Users className="h-3 w-3" /> {acTeacher?.name}
+                                    </div>
+                                  </DropdownMenuItem>
+                                )
+                              })
+                            ) : (
+                              <DropdownMenuItem disabled className="text-xs italic">
+                                No other scheduled classes
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+
                         <div className="mt-auto flex flex-col gap-0.5">
                           <p className="text-[9px] opacity-90 truncate flex items-center gap-1 font-medium">
                             <Users className="h-2.5 w-2.5" /> {teacher?.name}
