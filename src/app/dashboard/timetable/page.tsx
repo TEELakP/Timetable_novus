@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect } from "react"
 import { 
   Wand2, 
   ChevronLeft, 
@@ -34,7 +34,7 @@ import { collection, doc, writeBatch } from "firebase/firestore"
 import { deleteDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
-const ROW_HEIGHT = 80 // Increased row height for single-day clarity
+const ROW_HEIGHT = 80
 
 export default function TimetablePage() {
   const { toast } = useToast()
@@ -65,7 +65,21 @@ export default function TimetablePage() {
   const [selectedUnit, setSelectedUnit] = useState("")
   const [selectedTeacher, setSelectedTeacher] = useState("")
   const [selectedRoom, setSelectedRoom] = useState("")
-  const [selectedTime, setSelectedTime] = useState("09:00")
+  const [selectedStartTime, setSelectedStartTime] = useState("09:00")
+  const [selectedEndTime, setSelectedEndTime] = useState("11:00")
+
+  // Auto-calculate suggested end time
+  useEffect(() => {
+    if (selectedUnit && selectedStartTime) {
+      const unit = units?.find(u => u.id === selectedUnit)
+      if (unit) {
+        const startHour = parseInt(selectedStartTime.split(':')[0])
+        const sessionBudget = Math.ceil(unit.durationHours / (unit.sessionsPerWeek || 1))
+        const endHour = Math.min(startHour + sessionBudget, 24)
+        setSelectedEndTime(`${endHour.toString().padStart(2, '0')}:00`)
+      }
+    }
+  }, [selectedUnit, selectedStartTime, units])
 
   const filteredSessions = useMemo(() => {
     if (!sessions) return []
@@ -82,32 +96,27 @@ export default function TimetablePage() {
 
   const handleAddSession = () => {
     if (!selectedUnit || !selectedTeacher || !selectedRoom) {
-      toast({ title: "Validation Error", description: "Please match all entities (Teacher, Unit, Room).", variant: "destructive" })
+      toast({ title: "Validation Error", description: "Please select all required entities.", variant: "destructive" })
       return
     }
 
     const unit = units?.find(u => u.id === selectedUnit)
     const sessionId = `session-${Date.now()}`
     
-    const startHour = parseInt(selectedTime.split(':')[0])
-    const duration = unit?.durationHours || 1
-    const endHour = Math.min(startHour + duration, 24)
-    const endTime = `${endHour.toString().padStart(2, '0')}:00`
-
     const newSession: TimetableEntry = {
       id: sessionId,
       unitId: selectedUnit,
       teacherId: selectedTeacher,
       room: rooms?.find(r => r.id === selectedRoom)?.name || "Unknown",
       day: currentDay,
-      startTime: selectedTime,
-      endTime: endTime
+      startTime: selectedStartTime,
+      endTime: selectedEndTime
     }
 
     setDocumentNonBlocking(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionId), newSession, { merge: true })
     
     setIsAddOpen(false)
-    toast({ title: "Session Added", description: `Scheduled ${unit?.name} for ${currentDay}.` })
+    toast({ title: "Session Added", description: `Scheduled ${unit?.name} from ${selectedStartTime} to ${selectedEndTime}.` })
   }
 
   const handleDeleteSession = (id: string) => {
@@ -180,7 +189,7 @@ export default function TimetablePage() {
 
     sessions.forEach(s => {
       const start = parseInt(s.startTime.split(':')[0])
-      const end = parseInt(s.endTime.split(':')[0])
+      const end = parseInt(s.endTime.split(':')[0]) || 24
       
       for (let h = start; h < end; h++) {
         const slotKey = `${s.day}-${h.toString().padStart(2, '0')}:00`
@@ -203,7 +212,6 @@ export default function TimetablePage() {
     })
   }
 
-  // Layout Logic for Overlapping Sessions (Side-by-side)
   const positionedSessions = useMemo(() => {
     const sorted = [...filteredSessions].sort((a, b) => a.startTime.localeCompare(b.startTime))
     const columns: TimetableEntry[][] = []
@@ -245,18 +253,18 @@ export default function TimetablePage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Daily Planner</h2>
-          <p className="text-muted-foreground">View overlapping sessions side-by-side for high-resolution scheduling.</p>
+          <p className="text-muted-foreground">Detailed allocation for the selected working day.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-md border text-xs mr-2">
             <Filter className="h-3 w-3 ml-2" />
-            <span className="font-semibold">Filter:</span>
+            <span className="font-semibold">Campus Filter:</span>
             <Select value={filterCampus} onValueChange={(v: any) => setFilterCampus(v)}>
               <SelectTrigger className="h-8 border-none bg-transparent shadow-none w-[120px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="All">All Campuses</SelectItem>
+                <SelectItem value="All">All Sites</SelectItem>
                 {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -265,59 +273,70 @@ export default function TimetablePage() {
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm">
-                <Plus className="mr-2 h-4 w-4" /> Add Match
+                <Plus className="mr-2 h-4 w-4" /> Match Session
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>Add Match for {currentDay}</DialogTitle>
-                <DialogDescription>Match a teacher, unit, and room for this day.</DialogDescription>
+                <DialogTitle>Match Session for {currentDay}</DialogTitle>
+                <DialogDescription>Define the exact timeframe for this class session.</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
+              <div className="grid gap-4 py-4">
                 <div className="space-y-2">
                   <Label>Academic Unit</Label>
                   <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-                    <SelectTrigger><SelectValue placeholder="Select Unit" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Select Subject" /></SelectTrigger>
                     <SelectContent>
-                      {units?.map(u => <SelectItem key={u.id} value={u.id}>{u.name} ({u.type})</SelectItem>)}
+                      {units?.map(u => <SelectItem key={u.id} value={u.id}>{u.name} ({u.durationHours} hrs/wk)</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                   <div className="space-y-2">
+                    <Label>Start Time</Label>
+                    <Select value={selectedStartTime} onValueChange={setSelectedStartTime}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {HOURS.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>End Time</Label>
+                    <Select value={selectedEndTime} onValueChange={setSelectedEndTime}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {HOURS.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
                 <div className="space-y-2">
-                  <Label>Teacher</Label>
+                  <Label>Assigned Teacher</Label>
                   <Select value={selectedTeacher} onValueChange={setSelectedTeacher}>
-                    <SelectTrigger><SelectValue placeholder="Select Teacher" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Select Instructor" /></SelectTrigger>
                     <SelectContent>
                       {teachers?.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Room</Label>
+                  <Label>Assigned Room</Label>
                   <Select value={selectedRoom} onValueChange={setSelectedRoom}>
                     <SelectTrigger><SelectValue placeholder="Select Room" /></SelectTrigger>
                     <SelectContent>
-                      {rooms?.map(r => <SelectItem key={r.id} value={r.id}>{r.name} - {r.campus}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Start Time</Label>
-                  <Select value={selectedTime} onValueChange={setSelectedTime}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {HOURS.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                      {rooms?.map(r => <SelectItem key={r.id} value={r.id}>{r.name} ({r.campus})</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <DialogFooter>
-                <Button onClick={handleAddSession}>Add to Schedule</Button>
+                <Button onClick={handleAddSession} className="w-full">Create Match</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
 
-          <Button onClick={handleGenerate} disabled={isGenerating} size="sm">
+          <Button onClick={handleGenerate} disabled={isGenerating} size="sm" className="bg-primary/90">
             {isGenerating ? "AI Processing..." : (
               <>
                 <Wand2 className="mr-2 h-4 w-4" /> AI Generator
@@ -346,41 +365,30 @@ export default function TimetablePage() {
                     <ChevronRight className="h-5 w-5" />
                   </Button>
                 </div>
-                <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wider hidden md:flex">
-                  <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-500" /> Theory</div>
-                  <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-orange-500" /> Practical</div>
-                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="relative overflow-y-auto max-h-[1000px]">
-                {/* Time Grid Background */}
+              <div className="relative overflow-y-auto max-h-[1200px]">
                 <div 
                   className="grid border-b w-full"
                   style={{ 
-                    gridTemplateColumns: "100px 1fr",
+                    gridTemplateColumns: "80px 1fr",
                     gridTemplateRows: `repeat(${HOURS.length}, ${ROW_HEIGHT}px)`
                   }}
                 >
                   {HOURS.map((hour, rowIdx) => (
                     <React.Fragment key={hour}>
-                      <div 
-                        style={{ gridRow: rowIdx + 1, gridColumn: 1 }} 
-                        className="border-b border-r flex items-center justify-center text-xs font-mono text-muted-foreground bg-muted/5 sticky left-0 z-20"
-                      >
+                      <div className="border-b border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground bg-muted/5 sticky left-0 z-20">
                         {hour}
                       </div>
-                      <div 
-                        style={{ gridRow: rowIdx + 1, gridColumn: 2 }} 
-                        className="border-b group relative bg-background/30"
-                      >
+                      <div className="border-b group relative bg-background/30">
                         <div className="w-full h-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-0">
                           <Button 
                             variant="ghost" 
                             size="icon" 
                             className="h-8 w-8 rounded-full bg-primary/10 hover:bg-primary/20"
                             onClick={() => {
-                              setSelectedTime(hour)
+                              setSelectedStartTime(hour)
                               setIsAddOpen(true)
                             }}
                           >
@@ -392,8 +400,7 @@ export default function TimetablePage() {
                   ))}
                 </div>
 
-                {/* Session Overlays with Side-by-Side Multi-Lane Support */}
-                <div className="absolute top-0 left-[100px] right-0 h-full pointer-events-none">
+                <div className="absolute top-0 left-[80px] right-0 h-full pointer-events-none">
                   {positionedSessions.map(entry => {
                     const unit = units?.find(u => u.id === entry.unitId)
                     const teacher = teachers?.find(t => t.id === entry.teacherId)
@@ -421,7 +428,9 @@ export default function TimetablePage() {
                           )}
                         >
                           <div className="flex justify-between items-start mb-1">
-                             <div className="text-[9px] font-black uppercase bg-black/30 px-2 py-0.5 rounded-full">{unit?.type}</div>
+                             <div className="text-[8px] font-black uppercase bg-black/30 px-2 py-0.5 rounded-full">
+                               {entry.startTime} - {entry.endTime}
+                             </div>
                              <Button 
                                variant="ghost" 
                                size="icon" 
@@ -438,7 +447,7 @@ export default function TimetablePage() {
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <div className="flex-1 min-h-0">
-                                <p className="text-sm font-black leading-tight hover:underline">
+                                <p className="text-xs font-black leading-tight hover:underline">
                                   {unit?.name}
                                 </p>
                               </div>
@@ -446,7 +455,7 @@ export default function TimetablePage() {
                             <DropdownMenuContent className="w-72">
                               <DropdownMenuLabel className="flex items-center gap-2">
                                 <Layers className="h-4 w-4" />
-                                Subject Schedule
+                                Subject Timeline
                               </DropdownMenuLabel>
                               <DropdownMenuSeparator />
                               {sessions?.filter(s => s.unitId === entry.unitId).map(s => (
@@ -461,11 +470,11 @@ export default function TimetablePage() {
                           </DropdownMenu>
 
                           <div className="mt-auto space-y-1">
-                            <div className="flex items-center gap-2 text-[11px] font-semibold opacity-90 truncate">
+                            <div className="flex items-center gap-2 text-[10px] font-semibold opacity-90 truncate">
                                <Users className="h-3 w-3 shrink-0" />
                                {teacher?.name}
                             </div>
-                            <div className="flex items-center gap-2 text-[11px] font-mono opacity-90 truncate">
+                            <div className="flex items-center gap-2 text-[10px] font-mono opacity-90 truncate">
                                <DoorOpen className="h-3 w-3 shrink-0" />
                                {entry.room}
                             </div>
@@ -484,8 +493,8 @@ export default function TimetablePage() {
           <Card className="shadow-lg border-none bg-gradient-to-br from-card to-muted/20">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg font-headline flex items-center gap-2">
-                <AlertTriangle className={cn("h-5 w-5", detectedConflicts.length > 0 ? "text-destructive" : "text-muted-foreground")} />
-                Daily Integrity
+                <AlertTriangle className={cn("h-5 w-5", detectedConflicts.filter(c => c.includes(currentDay)).length > 0 ? "text-destructive" : "text-muted-foreground")} />
+                Conflict Monitor
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -506,13 +515,13 @@ export default function TimetablePage() {
                   <div className="p-3 rounded-full bg-green-500/10">
                     <CheckCircle2 className="h-8 w-8 text-green-500" />
                   </div>
-                  <p className="text-sm font-semibold">Conflict-Free Day</p>
-                  <p className="text-[10px] text-muted-foreground">All resources for {currentDay} are correctly allocated.</p>
+                  <p className="text-sm font-semibold">Integrity Verified</p>
+                  <p className="text-[10px] text-muted-foreground">All resources for {currentDay} are validly allocated.</p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center py-6 text-center space-y-2 text-muted-foreground opacity-50">
                   <Info className="h-8 w-8" />
-                  <p className="text-xs italic">No sessions scheduled for today.</p>
+                  <p className="text-xs italic">No matches scheduled for today.</p>
                 </div>
               )}
             </CardContent>
@@ -520,35 +529,20 @@ export default function TimetablePage() {
 
           <Card className="shadow-lg border-none">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-headline">Day Summary</CardTitle>
+              <CardTitle className="text-sm font-headline">Session Audit</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-muted/50 p-3 rounded-lg">
-                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">Classes</p>
+                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">Sessions</p>
                   <p className="text-xl font-black">{filteredSessions.length}</p>
                 </div>
                 <div className="bg-muted/50 p-3 rounded-lg">
-                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">Staff</p>
+                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">Instructors</p>
                   <p className="text-xl font-black">
                     {new Set(filteredSessions.map(s => s.teacherId)).size}
                   </p>
                 </div>
-              </div>
-              <div className="space-y-2 pt-2 border-t">
-                 <p className="text-[10px] font-bold text-muted-foreground uppercase">Campus Activity</p>
-                 {CAMPUSES.map(campus => {
-                   const count = filteredSessions.filter(s => {
-                     const room = rooms?.find(r => r.name === s.room)
-                     return room?.campus === campus
-                   }).length
-                   return (
-                     <div key={campus} className="flex justify-between items-center text-[10px]">
-                        <span className="font-medium text-muted-foreground">{campus}</span>
-                        <span className="font-black">{count}</span>
-                     </div>
-                   )
-                 })}
               </div>
             </CardContent>
           </Card>

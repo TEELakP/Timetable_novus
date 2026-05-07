@@ -184,24 +184,24 @@ export default function UnitsPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="duration">Duration (Hours)</Label>
+                    <Label htmlFor="duration">Total Weekly Hours</Label>
                     <Input 
                       id="duration" 
                       type="number" 
                       min="1" 
-                      max="8" 
+                      max="40" 
                       value={newUnitDuration}
                       onChange={(e) => setNewUnitDuration(e.target.value)}
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="sessions">Sessions per Week</Label>
+                  <Label htmlFor="sessions">Expected Sessions per Week</Label>
                   <Input 
                     id="sessions" 
                     type="number" 
                     min="1" 
-                    max="5" 
+                    max="10" 
                     value={newUnitSessions}
                     onChange={(e) => setNewUnitSessions(e.target.value)}
                   />
@@ -227,23 +227,23 @@ export default function UnitsPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Theory Hours/Week</CardTitle>
+            <CardTitle className="text-sm font-medium">Weekly Theory Hours</CardTitle>
             <Layers className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {units?.filter(u => u.type === 'theory').reduce((acc, u) => acc + (u.durationHours * u.sessionsPerWeek), 0) || 0}
+              {units?.filter(u => u.type === 'theory').reduce((acc, u) => acc + u.durationHours, 0) || 0}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Practical Hours/Week</CardTitle>
+            <CardTitle className="text-sm font-medium">Weekly Practical Hours</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {units?.filter(u => u.type === 'practical').reduce((acc, u) => acc + (u.durationHours * u.sessionsPerWeek), 0) || 0}
+              {units?.filter(u => u.type === 'practical').reduce((acc, u) => acc + u.durationHours, 0) || 0}
             </div>
           </CardContent>
         </Card>
@@ -261,8 +261,8 @@ export default function UnitsPage() {
                 <TableRow>
                   <TableHead>Unit Name</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Sessions/Week</TableHead>
+                  <TableHead>Weekly Total</TableHead>
+                  <TableHead>Frequency</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -323,8 +323,8 @@ export default function UnitsPage() {
                           {unit.type.charAt(0).toUpperCase() + unit.type.slice(1)}
                         </Badge>
                       </TableCell>
-                      <TableCell>{unit.durationHours} hours</TableCell>
-                      <TableCell>{unit.sessionsPerWeek}</TableCell>
+                      <TableCell>{unit.durationHours} hrs/week</TableCell>
+                      <TableCell>{unit.sessionsPerWeek} sessions</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Dialog open={!!editingUnit && editingUnit.id === unit.id} onOpenChange={(open) => !open && setEditingUnit(null)}>
@@ -361,7 +361,7 @@ export default function UnitsPage() {
                                       </Select>
                                     </div>
                                     <div className="space-y-2">
-                                      <Label htmlFor="edit-duration">Duration (Hours)</Label>
+                                      <Label htmlFor="edit-duration">Total Weekly Hours</Label>
                                       <Input 
                                         id="edit-duration" 
                                         type="number" 

@@ -1,10 +1,7 @@
+
 'use server';
 /**
  * @fileOverview This file implements a Genkit flow for generating an initial conflict-free timetable.
- *
- * - generateInitialTimetable - A function that triggers the timetable generation process.
- * - GenerateInitialTimetableInput - The input type for the generateInitialTimetable function.
- * - GenerateInitialTimetableOutput - The return type for the generateInitialTimetable function.
  */
 
 import {ai} from '@/ai/genkit';
@@ -15,81 +12,66 @@ const TeacherAvailabilitySlotSchema = z.object({
   day: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']),
   startTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Invalid time format (HH:MM)'),
   endTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Invalid time format (HH:MM)'),
-}).describe('A specific time slot a teacher is available.');
+});
 
 const TeacherSchema = z.object({
-  id: z.string().describe('Unique identifier for the teacher.'),
-  name: z.string().describe('Name of the teacher.'),
-  availability: z.array(TeacherAvailabilitySlotSchema).describe('List of available time slots for the teacher.'),
-  qualifiedUnits: z.array(z.string()).describe('IDs of units the teacher is qualified to teach.'),
-  campuses: z.array(z.enum(['Ultimo', 'Gosford', 'Perth', 'Online'])).describe('Campuses where the teacher can work.'),
+  id: z.string(),
+  name: z.string(),
+  availability: z.array(TeacherAvailabilitySlotSchema),
+  qualifiedUnits: z.array(z.string()),
+  campuses: z.array(z.enum(['Ultimo', 'Gosford', 'Perth', 'Online'])),
 });
 
 const UnitSchema = z.object({
-  id: z.string().describe('Unique identifier for the unit.'),
-  name: z.string().describe('Name of the unit.'),
-  type: z.enum(['theory', 'practical']).describe('Type of the unit (theory or practical).'),
-  durationHours: z.number().int().min(1).max(4).describe('Duration of one session in hours.'),
-  sessionsPerWeek: z.number().int().min(1).max(5).describe('Number of sessions required per week for this unit.'),
+  id: z.string(),
+  name: z.string(),
+  type: z.enum(['theory', 'practical']),
+  durationHours: z.number().describe('Total hours per week required for this unit.'),
+  sessionsPerWeek: z.number().int().min(1).describe('Number of sessions to divide the weekly hours into.'),
 });
 
 const GenerateInitialTimetableInputSchema = z.object({
-  teachers: z.array(TeacherSchema).describe('List of available teachers with their profiles.'),
-  units: z.array(UnitSchema).describe('List of academic units to be scheduled.'),
-  schedulingRules: z.array(z.string()).describe('A list of rules that the timetable must adhere to.'),
+  teachers: z.array(TeacherSchema),
+  units: z.array(UnitSchema),
+  schedulingRules: z.array(z.string()),
 });
 export type GenerateInitialTimetableInput = z.infer<typeof GenerateInitialTimetableInputSchema>;
 
 // Output Schemas
 const TimetableEntrySchema = z.object({
-  unitId: z.string().describe('ID of the unit scheduled for this session.'),
-  teacherId: z.string().describe('ID of the teacher assigned to this unit session.'),
-  day: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).describe('Day of the week for the session.'),
-  startTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Start time of the session in HH:MM format.'),
-  endTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'End time of the session in HH:MM format.'),
-  room: z.string().describe('Assigned room for the session.'),
-  campus: z.enum(['Ultimo', 'Gosford', 'Perth', 'Online']).describe('Assigned campus for the session.'),
+  unitId: z.string(),
+  teacherId: z.string(),
+  day: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
+  endTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
+  room: z.string(),
 });
 
 const GenerateInitialTimetableOutputSchema = z.object({
-  timetable: z.array(TimetableEntrySchema).describe('A generated list of scheduled timetable entries.'),
-  conflicts: z.array(z.string()).describe('A list of any detected conflicts.'),
+  timetable: z.array(TimetableEntrySchema),
+  conflicts: z.array(z.string()),
 });
 export type GenerateInitialTimetableOutput = z.infer<typeof GenerateInitialTimetableOutputSchema>;
-
 
 const generateTimetablePrompt = ai.definePrompt({
   name: 'generateInitialTimetablePrompt',
   input: { schema: GenerateInitialTimetableInputSchema },
   output: { schema: GenerateInitialTimetableOutputSchema },
-  prompt: `You are an expert timetable generator for multiple campuses (Ultimo, Gosford, Perth, Online). Your task is to create a conflict-free weekly timetable.
+  prompt: `You are an expert timetable generator. Your task is to divide weekly academic unit requirements into specific daily sessions.
 
-**Teachers:**
-\`\`\`json
-{{{JSON.stringify teachers}}}
-\`\`\`
+**Constraint Rules:**
+1. Units have a 'durationHours' which represents the TOTAL hours per week.
+2. Units have 'sessionsPerWeek'. You must split the total hours across exactly this many sessions.
+3. For example, if 'durationHours' is 4 and 'sessionsPerWeek' is 2, you must create two 2-hour sessions on different days.
+4. Teachers have 'availability' blocks and 'qualifiedUnits'.
+5. No teacher or room can be double-booked at the same time on the same day.
 
-**Units:**
-\`\`\`json
-{{{JSON.stringify units}}}
-\`\`\`
+**Data:**
+Teachers: {{{JSON.stringify teachers}}}
+Units: {{{JSON.stringify units}}}
+Rules: {{#each schedulingRules}}- {{{this}}}{{/each}}
 
-**Scheduling Rules:**
-\`\`\`
-{{#each schedulingRules}}- {{{this}}}
-{{/each}}
-\`\`\`
-
-Generate a timetable that is completely conflict-free. Ensure that:
-1.  Teachers are only assigned to campuses they are authorized for.
-2.  Each unit's required sessions per week are met.
-3.  Teachers only teach units they are qualified for.
-4.  Teachers only teach during their available times.
-5.  No teacher is scheduled for two classes simultaneously across ANY campus.
-6.  The timetable should be for a 7-day week (Monday to Sunday).
-7.  Session duration must match the 'durationHours' of the unit.
-
-Output a valid JSON object matching the schema.`,
+Generate a valid JSON object matching the schema for a complete 7-day schedule.`,
 });
 
 const generateInitialTimetableFlow = ai.defineFlow(
