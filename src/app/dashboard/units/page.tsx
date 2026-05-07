@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState } from "react"
@@ -13,7 +12,8 @@ import {
   Loader2,
   Calendar,
   User,
-  MapPin
+  MapPin,
+  Globe
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -57,7 +57,7 @@ export default function UnitsPage() {
   
   const [isSingleOpen, setIsSingleOpen] = useState(false)
   const [newUnitName, setNewUnitName] = useState("")
-  const [newUnitType, setNewUnitType] = useState<'theory' | 'practical'>('theory')
+  const [newUnitType, setNewUnitType] = useState<'theory' | 'practical' | 'online'>('theory')
   const [newUnitDuration, setNewUnitDuration] = useState("2")
   const [newUnitSessions, setNewUnitSessions] = useState("1")
 
@@ -180,6 +180,7 @@ export default function UnitsPage() {
                       <SelectContent>
                         <SelectItem value="theory">Theory</SelectItem>
                         <SelectItem value="practical">Practical</SelectItem>
+                        <SelectItem value="online">Online</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -215,7 +216,7 @@ export default function UnitsPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Units</CardTitle>
@@ -244,6 +245,17 @@ export default function UnitsPage() {
           <CardContent>
             <div className="text-2xl font-bold">
               {units?.filter(u => u.type === 'practical').reduce((acc, u) => acc + u.durationHours, 0) || 0}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Weekly Online Hours</CardTitle>
+            <Globe className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {units?.filter(u => u.type === 'online').reduce((acc, u) => acc + u.durationHours, 0) || 0}
             </div>
           </CardContent>
         </Card>
@@ -318,7 +330,13 @@ export default function UnitsPage() {
                       <TableCell>
                         <Badge 
                           variant="secondary"
-                          className={unit.type === 'theory' ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100" : "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-100"}
+                          className={
+                            unit.type === 'theory' 
+                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100" 
+                              : unit.type === 'practical'
+                              ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-100"
+                              : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                          }
                         >
                           {unit.type.charAt(0).toUpperCase() + unit.type.slice(1)}
                         </Badge>
@@ -357,6 +375,7 @@ export default function UnitsPage() {
                                         <SelectContent>
                                           <SelectItem value="theory">Theory</SelectItem>
                                           <SelectItem value="practical">Practical</SelectItem>
+                                          <SelectItem value="online">Online</SelectItem>
                                         </SelectContent>
                                       </Select>
                                     </div>

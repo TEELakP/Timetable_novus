@@ -18,7 +18,7 @@ export interface Teacher {
 export interface Unit {
   id: string;
   name: string;
-  type: 'theory' | 'practical';
+  type: 'theory' | 'practical' | 'online';
   durationHours: number;
   sessionsPerWeek: number;
 }

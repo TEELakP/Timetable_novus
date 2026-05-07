@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview This file implements a Genkit flow for generating an initial conflict-free timetable.
@@ -25,7 +24,7 @@ const TeacherSchema = z.object({
 const UnitSchema = z.object({
   id: z.string(),
   name: z.string(),
-  type: z.enum(['theory', 'practical']),
+  type: z.enum(['theory', 'practical', 'online']),
   durationHours: z.number().describe('Total hours per week required for this unit.'),
   sessionsPerWeek: z.number().int().min(1).describe('Number of sessions to divide the weekly hours into.'),
 });
