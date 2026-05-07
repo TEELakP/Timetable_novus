@@ -1,28 +1,22 @@
 
 "use client"
 
-import { useState } from "react"
+import React, { useState } from "react"
 import { 
   Wand2, 
-  Download, 
-  Share2, 
   ChevronLeft, 
   ChevronRight, 
   AlertTriangle,
   Info,
-  MoreVertical,
   CheckCircle2,
-  BookOpen,
-  Plus,
   Users,
-  LayoutDashboard,
+  Plus,
   Loader2,
   Trash2,
   DoorOpen
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
@@ -33,7 +27,7 @@ import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, deleteDoc, writeBatch } from "firebase/firestore"
-import { setDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { deleteDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 
@@ -131,15 +125,11 @@ export default function TimetablePage() {
         schedulingRules: rulesData?.map((r: any) => r.name) || []
       })
       
-      // Batch clear and replace sessions
       const batch = writeBatch(db)
-      
-      // Clear existing
       sessions?.forEach(s => {
         batch.delete(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id))
       })
 
-      // Add new
       result.timetable.forEach((entry: any, idx: number) => {
         const id = `ai-gen-${Date.now()}-${idx}`
         batch.set(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", id), {
@@ -166,33 +156,46 @@ export default function TimetablePage() {
     }
   }
 
-  const getEntryForSlot = (day: string, hour: string) => {
-    return sessions?.find(entry => entry.day === day && entry.startTime === hour)
-  }
-
-  // Detect logical conflicts in the UI
+  // Detect logical conflicts
   const detectedConflicts: string[] = []
-  if (sessions) {
+  if (sessions && teachers) {
     const teacherUsage: Record<string, string[]> = {}
     const roomUsage: Record<string, string[]> = {}
 
     sessions.forEach(s => {
-      const slotKey = `${s.day}-${s.startTime}`
+      const start = parseInt(s.startTime.split(':')[0])
+      const end = parseInt(s.endTime.split(':')[0])
       
-      // Teacher Overlap
-      if (!teacherUsage[s.teacherId]) teacherUsage[s.teacherId] = []
-      if (teacherUsage[s.teacherId].includes(slotKey)) {
-        const teacherName = teachers?.find(t => t.id === s.teacherId)?.name
-        detectedConflicts.push(`Teacher ${teacherName} has overlapping classes at ${s.day} ${s.startTime}`)
-      }
-      teacherUsage[s.teacherId].push(slotKey)
+      for (let h = start; h < end; h++) {
+        const slotKey = `${s.day}-${h.toString().padStart(2, '0')}:00`
+        
+        // Teacher Overlap
+        if (!teacherUsage[s.teacherId]) teacherUsage[s.teacherId] = []
+        if (teacherUsage[s.teacherId].includes(slotKey)) {
+          const teacherName = teachers?.find(t => t.id === s.teacherId)?.name
+          const conflictMsg = `Teacher ${teacherName} is double-booked at ${s.day} ${h}:00`
+          if (!detectedConflicts.includes(conflictMsg)) detectedConflicts.push(conflictMsg)
+        }
+        teacherUsage[s.teacherId].push(slotKey)
 
-      // Room Overlap
-      if (!roomUsage[s.room]) roomUsage[s.room] = []
-      if (roomUsage[s.room].includes(slotKey)) {
-        detectedConflicts.push(`Room ${s.room} has multiple classes scheduled at ${s.day} ${s.startTime}`)
+        // Room Overlap
+        if (!roomUsage[s.room]) roomUsage[s.room] = []
+        if (roomUsage[s.room].includes(slotKey)) {
+          const conflictMsg = `Room ${s.room} has multiple classes at ${s.day} ${h}:00`
+          if (!detectedConflicts.includes(conflictMsg)) detectedConflicts.push(conflictMsg)
+        }
+        roomUsage[s.room].push(slotKey)
       }
-      roomUsage[s.room].push(slotKey)
+    })
+  }
+
+  const isSlotOccupied = (day: string, hour: string) => {
+    return sessions?.some(s => {
+      if (s.day !== day) return false
+      const start = parseInt(s.startTime.split(':')[0])
+      const end = parseInt(s.endTime.split(':')[0])
+      const current = parseInt(hour.split(':')[0])
+      return current >= start && current < end
     })
   }
 
@@ -313,58 +316,38 @@ export default function TimetablePage() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="grid grid-cols-[80px_repeat(5,1fr)] min-w-[800px]">
-                {/* Header */}
-                <div className="h-12 border-b bg-muted/20" />
-                {DAYS.map(day => (
-                  <div key={day} className="h-12 border-b flex items-center justify-center font-bold text-sm bg-muted/20">
+              <div 
+                className="grid min-w-[800px] border-b"
+                style={{ 
+                  gridTemplateColumns: "80px repeat(5, 1fr)",
+                  gridTemplateRows: `48px repeat(${HOURS.length}, 96px)`
+                }}
+              >
+                {/* Headers */}
+                <div className="row-start-1 col-start-1 bg-muted/20 border-b border-r" />
+                {DAYS.map((day, i) => (
+                  <div key={day} style={{ gridColumn: i + 2 }} className="row-start-1 border-b border-r flex items-center justify-center font-bold text-sm bg-muted/20">
                     {day}
                   </div>
                 ))}
 
-                {/* Grid Rows */}
-                {HOURS.map(hour => (
-                  <div key={hour} className="contents">
-                    <div className="h-24 border-b border-r flex items-center justify-center text-xs font-mono text-muted-foreground">
+                {/* Time Column & Background Cells */}
+                {HOURS.map((hour, rowIdx) => (
+                  <React.Fragment key={hour}>
+                    <div 
+                      style={{ gridRow: rowIdx + 2, gridColumn: 1 }} 
+                      className="border-b border-r flex items-center justify-center text-xs font-mono text-muted-foreground"
+                    >
                       {hour}
                     </div>
-                    {DAYS.map(day => {
-                      const entry = getEntryForSlot(day, hour)
-                      const unit = units?.find(u => u.id === entry?.unitId)
-                      const teacher = teachers?.find(t => t.id === entry?.teacherId)
-                      
-                      return (
-                        <div key={`${day}-${hour}`} className="h-24 border-b border-r p-1 relative group bg-background/50">
-                          {entry ? (
-                            <div 
-                              className={cn(
-                                "w-full h-full rounded-md p-2 text-white shadow-md transition-all group-hover:scale-[1.02] cursor-pointer overflow-hidden relative",
-                                unit?.type === 'theory' ? "bg-blue-500 hover:bg-blue-600" : "bg-orange-500 hover:bg-orange-600",
-                              )}
-                            >
-                              <div className="flex justify-between items-start">
-                                <span className="text-[10px] font-bold uppercase tracking-wider opacity-80">{unit?.type}</span>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="h-5 w-5 text-white hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => handleDeleteSession(entry.id)}
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </div>
-                              <p className="text-[11px] font-bold line-clamp-2 leading-tight mt-0.5">{unit?.name}</p>
-                              <div className="mt-auto pt-1 flex flex-col gap-0.5">
-                                <p className="text-[10px] opacity-90 truncate flex items-center gap-1">
-                                  <Users className="h-2.5 w-2.5" /> {teacher?.name}
-                                </p>
-                                <p className="text-[9px] font-mono opacity-80 flex items-center gap-1">
-                                  <DoorOpen className="h-2.5 w-2.5" /> {entry.room}
-                                </p>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="w-full h-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    {DAYS.map((day, colIdx) => (
+                      <div 
+                        key={`${day}-${hour}`} 
+                        style={{ gridRow: rowIdx + 2, gridColumn: colIdx + 2 }} 
+                        className="border-b border-r p-1 relative group bg-background/50"
+                      >
+                        {!isSlotOccupied(day, hour) && (
+                           <div className="w-full h-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
@@ -377,13 +360,65 @@ export default function TimetablePage() {
                               >
                                 <Plus className="h-3 w-3" />
                               </Button>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
+                           </div>
+                        )}
+                      </div>
+                    ))}
+                  </React.Fragment>
                 ))}
+
+                {/* Entries (Overlays) */}
+                {sessions?.map(entry => {
+                  const unit = units?.find(u => u.id === entry.unitId)
+                  const teacher = teachers?.find(t => t.id === entry.teacherId)
+                  const col = DAYS.indexOf(entry.day) + 2
+                  const row = HOURS.indexOf(entry.startTime) + 2
+                  const duration = parseInt(entry.endTime.split(':')[0]) - parseInt(entry.startTime.split(':')[0])
+                  
+                  if (col < 2 || row < 2) return null;
+
+                  return (
+                    <div 
+                      key={entry.id} 
+                      style={{ 
+                        gridColumn: col, 
+                        gridRow: `${row} / span ${duration}` 
+                      }} 
+                      className="p-1 z-10"
+                    >
+                      <div 
+                        className={cn(
+                          "w-full h-full rounded-md p-3 text-white shadow-lg transition-all hover:scale-[1.01] cursor-pointer overflow-hidden flex flex-col relative group",
+                          unit?.type === 'theory' ? "bg-blue-500 hover:bg-blue-600" : "bg-orange-500 hover:bg-orange-600",
+                        )}
+                      >
+                        <div className="flex justify-between items-start mb-1">
+                          <span className="text-[10px] font-black uppercase tracking-widest opacity-80">{unit?.type}</span>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-6 w-6 text-white hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteSession(entry.id)
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <p className="text-[13px] font-bold line-clamp-3 leading-tight mb-2">{unit?.name}</p>
+                        <div className="mt-auto flex flex-col gap-1">
+                          <p className="text-[11px] opacity-90 truncate flex items-center gap-1.5 font-medium">
+                            <Users className="h-3 w-3" /> {teacher?.name}
+                          </p>
+                          <p className="text-[10px] font-mono opacity-80 flex items-center gap-1.5">
+                            <DoorOpen className="h-3 w-3" /> {entry.room}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </CardContent>
           </Card>
