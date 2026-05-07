@@ -1,3 +1,4 @@
+
 {
   "entities": {
     "Teacher": {
@@ -16,19 +17,19 @@
         },
         "email": {
           "type": "string",
-          "description": "The email address of the teacher, typically used for communication and identification.",
+          "description": "The email address of the teacher.",
           "format": "email"
         },
         "qualifiesForUnitIds": {
           "type": "array",
-          "description": "References to AcademicUnit entities that this teacher is qualified to teach. (Relationship: Teacher N:N AcademicUnit)",
+          "description": "References to AcademicUnit entities that this teacher is qualified to teach.",
           "items": {
             "type": "string"
           }
         },
         "unavailableTimeSlots": {
           "type": "array",
-          "description": "A list of recurring weekly time slots (e.g., 'MONDAY_0900-1000', 'FRIDAY_1400-1500') when the teacher is explicitly unavailable to teach.",
+          "description": "A list of recurring weekly time slots when the teacher is explicitly unavailable.",
           "items": {
             "type": "string"
           }
@@ -37,7 +38,6 @@
       "required": [
         "id",
         "name",
-        "email",
         "qualifiesForUnitIds"
       ]
     },
@@ -45,7 +45,7 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "AcademicUnit",
       "type": "object",
-      "description": "Represents an academic course or unit offered by the institution, including its type and prerequisites.",
+      "description": "Represents an academic course or unit offered by the institution.",
       "properties": {
         "id": {
           "type": "string",
@@ -53,84 +53,62 @@
         },
         "name": {
           "type": "string",
-          "description": "The full name of the academic unit (e.g., 'Introduction to Algorithms')."
+          "description": "The full name of the academic unit."
         },
         "code": {
           "type": "string",
-          "description": "A short, unique alphanumeric code for the unit (e.g., 'CS201')."
-        },
-        "description": {
-          "type": "string",
-          "description": "A detailed description of the academic unit's content and learning objectives."
+          "description": "A short alphanumeric code for the unit."
         },
         "unitType": {
           "type": "string",
-          "description": "The classification of the unit, indicating its primary mode of delivery.",
-          "items": {
-            "type": "string"
-          }
-        },
-        "prerequisiteUnitIds": {
-          "type": "array",
-          "description": "References to other AcademicUnit entities that must be completed before this unit can be taken. (Relationship: AcademicUnit N:N AcademicUnit)",
-          "items": {
-            "type": "string"
-          }
+          "description": "The classification of the unit (theory/practical)."
         },
         "recommendedDurationHours": {
           "type": "number",
-          "description": "The recommended number of hours for a single teaching session of this unit."
+          "description": "Recommended hours per session."
         }
       },
       "required": [
         "id",
         "name",
-        "code",
         "unitType"
       ]
     },
-    "SchedulingRule": {
+    "Room": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "SchedulingRule",
+      "title": "Room",
       "type": "object",
-      "description": "Defines a specific constraint or condition that the automated timetable generator must satisfy.",
+      "description": "Represents a physical or virtual room where class sessions are held.",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the SchedulingRule entity."
+          "description": "Unique identifier for the Room entity."
         },
         "name": {
           "type": "string",
-          "description": "A human-readable name for the scheduling rule (e.g., 'Prevent Teacher Overlap')."
+          "description": "The name of the room (e.g., 'Room 301', 'Lab A')."
         },
-        "description": {
-          "type": "string",
-          "description": "A detailed explanation of what the rule enforces and its purpose."
+        "capacity": {
+          "type": "number",
+          "description": "The maximum number of students the room can accommodate."
         },
-        "ruleType": {
+        "campus": {
           "type": "string",
-          "description": "The category or classification of the rule.",
-          "items": {
-            "type": "string"
-          }
-        },
-        "configurationJson": {
-          "type": "string",
-          "description": "A JSON string containing specific parameters or complex logic required for the rule's evaluation."
+          "description": "The campus where the room is located (Ultimo, Gosford, Perth, Online)."
         }
       },
       "required": [
         "id",
         "name",
-        "ruleType",
-        "configurationJson"
+        "capacity",
+        "campus"
       ]
     },
     "ClassSession": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ClassSession",
       "type": "object",
-      "description": "Represents a single scheduled instance of an academic unit, specifying the teacher, time, and location.",
+      "description": "Represents a single scheduled instance of an academic unit.",
       "properties": {
         "id": {
           "type": "string",
@@ -138,37 +116,30 @@
         },
         "timetableId": {
           "type": "string",
-          "description": "Reference to the Timetable entity that this class session belongs to. (Relationship: Timetable 1:N ClassSession)"
+          "description": "Reference to the Timetable."
         },
         "academicUnitId": {
           "type": "string",
-          "description": "Reference to the AcademicUnit entity being taught in this session. (Relationship: AcademicUnit 1:N ClassSession)"
+          "description": "Reference to the AcademicUnit."
         },
         "teacherId": {
           "type": "string",
-          "description": "Reference to the Teacher entity assigned to deliver this session. (Relationship: Teacher 1:N ClassSession)"
+          "description": "Reference to the Teacher."
         },
         "scheduledStartTime": {
           "type": "string",
-          "description": "The exact date and time when the class session is scheduled to begin.",
           "format": "date-time"
         },
         "scheduledEndTime": {
           "type": "string",
-          "description": "The exact date and time when the class session is scheduled to end.",
           "format": "date-time"
         },
         "location": {
           "type": "string",
-          "description": "The physical location (e.g., 'Room 301', 'Lab A') where the session will take place."
+          "description": "The room name or location."
         },
         "isConflict": {
-          "type": "boolean",
-          "description": "A flag indicating whether this class session currently has a detected scheduling conflict."
-        },
-        "conflictDetails": {
-          "type": "string",
-          "description": "A textual description providing more information about the nature of the conflict, if 'isConflict' is true."
+          "type": "boolean"
         }
       },
       "required": [
@@ -186,56 +157,21 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Timetable",
       "type": "object",
-      "description": "Represents a complete generated or manually adjusted weekly/daily timetable for a specific period.",
+      "description": "Represents a complete generated or manually adjusted timetable.",
       "properties": {
         "id": {
-          "type": "string",
-          "description": "Unique identifier for the Timetable entity."
+          "type": "string"
         },
         "name": {
-          "type": "string",
-          "description": "A descriptive name for the timetable (e.g., 'Spring 2024 Provisional Timetable')."
-        },
-        "description": {
-          "type": "string",
-          "description": "A detailed description of the timetable, including its purpose, associated academic year, or specific faculties."
-        },
-        "generationTimestamp": {
-          "type": "string",
-          "description": "The date and time when this timetable was initially generated or last significantly modified.",
-          "format": "date-time"
-        },
-        "startDate": {
-          "type": "string",
-          "description": "The calendar date from which this timetable becomes active.",
-          "format": "date"
-        },
-        "endDate": {
-          "type": "string",
-          "description": "The calendar date until which this timetable remains active.",
-          "format": "date"
+          "type": "string"
         },
         "status": {
-          "type": "string",
-          "description": "The current lifecycle status of the timetable (e.g., draft, published, archived).",
-          "items": {
-            "type": "string"
-          }
-        },
-        "schedulingRuleIds": {
-          "type": "array",
-          "description": "References to SchedulingRule entities that were applied or considered during the generation of this timetable. (Relationship: Timetable N:N SchedulingRule)",
-          "items": {
-            "type": "string"
-          }
+          "type": "string"
         }
       },
       "required": [
         "id",
         "name",
-        "generationTimestamp",
-        "startDate",
-        "endDate",
         "status"
       ]
     }
@@ -255,13 +191,7 @@
           "schema": {
             "$ref": "#/backend/entities/Teacher"
           },
-          "description": "Stores individual teacher profiles, qualifications, and unavailability. This collection is primarily managed by administrators and may, in a complete system, be linked to 'request.auth.uid' for user-specific data or role checks.",
-          "params": [
-            {
-              "name": "teacherId",
-              "description": "Unique identifier for a specific Teacher."
-            }
-          ]
+          "description": "Stores individual teacher profiles."
         }
       },
       {
@@ -271,29 +201,17 @@
           "schema": {
             "$ref": "#/backend/entities/AcademicUnit"
           },
-          "description": "Contains definitions for all academic units offered, including their prerequisites and type. This collection is managed by administrators.",
-          "params": [
-            {
-              "name": "unitId",
-              "description": "Unique identifier for an Academic Unit."
-            }
-          ]
+          "description": "Contains definitions for all academic units."
         }
       },
       {
-        "path": "/schedulingRules/{ruleId}",
+        "path": "/rooms/{roomId}",
         "definition": {
-          "entityName": "SchedulingRule",
+          "entityName": "Room",
           "schema": {
-            "$ref": "#/backend/entities/SchedulingRule"
+            "$ref": "#/backend/entities/Room"
           },
-          "description": "Stores definitions for various scheduling constraints that the timetable generator must adhere to. This collection is managed by administrators.",
-          "params": [
-            {
-              "name": "ruleId",
-              "description": "Unique identifier for a Scheduling Rule."
-            }
-          ]
+          "description": "Stores room definitions and capacities."
         }
       },
       {
@@ -303,13 +221,7 @@
           "schema": {
             "$ref": "#/backend/entities/Timetable"
           },
-          "description": "Represents a complete generated or manually adjusted timetable. The 'status' field ('DRAFT', 'PUBLISHED', 'ARCHIVED') allows for explicit state modeling. Administrators have full control, while non-admin users may have read access to 'PUBLISHED' timetables.",
-          "params": [
-            {
-              "name": "timetableId",
-              "description": "Unique identifier for a specific Timetable."
-            }
-          ]
+          "description": "Represents a complete timetable."
         }
       },
       {
@@ -319,20 +231,9 @@
           "schema": {
             "$ref": "#/backend/entities/ClassSession"
           },
-          "description": "Represents a single scheduled instance of an academic unit, nested under its parent Timetable. Documents in this subcollection include a denormalized 'timetableStatus' field (copied from its parent Timetable) to ensure Authorization Independence and support QAP-compliant security rules.",
-          "params": [
-            {
-              "name": "timetableId",
-              "description": "The unique identifier of the parent Timetable."
-            },
-            {
-              "name": "classSessionId",
-              "description": "Unique identifier for a specific Class Session within a Timetable."
-            }
-          ]
+          "description": "Represents individual class sessions."
         }
       }
-    ],
-    "reasoning": "The Firestore structure for the 'Smart Timetable Manager' is designed with a strong emphasis on secure, scalable, and debuggable authorization rules, adhering to the provided CORE DESIGN PRINCIPLES and DESIGN STRATEGY MANDATES. This design ensures clarity, independence, and efficient query capabilities.\n\n1.  Authorization Independence (CRITICAL) & QAPs:\n    *   Denormalization for ClassSession: Each ClassSession document, residing in the subcollection `/timetables/{timetableId}/classSessions/{classSessionId}`, will include a denormalized `timetableStatus` field. This field will be a copy of its parent Timetable's `status` (e.g., 'DRAFT', 'PUBLISHED'). This is crucial for Authorization Independence, as it eliminates the need for `get()` calls to the parent `Timetable` document within security rules when authorizing access to `ClassSession` documents. This enables atomic operations on `ClassSession` and supports QAP-compliant `list` operations, allowing rules to filter `ClassSession` documents based on their `timetableStatus` directly without cross-document reads.\n    *   Administrative Role (DBAC Principle Adaptation): The principle of Database-Based Access Control (DBAC) mandates storing roles in the database, typically through a dedicated collection (e.g., `/roles_admin/{uid}`) where the document's existence at `request.auth.uid` grants a role. However, the provided `backend.entities` schema lacks a 'User' or 'AdminRole' entity to reference for `definition.schema.$ref`. In a complete system, such an entity would be defined, or an `isAdmin: boolean` flag would be added to a relevant `User` entity, allowing `request.auth.uid` to directly check its own admin status without complex `get()` dependencies on *other* data for authorization. For this design, we proceed with the assumption that an administrative context can be established (e.g., through an implied `User` entity or external user management mapping to `request.auth.uid`), granting administrators full CRUD access across the system.\n\n2.  Structural Segregation (Homogeneous Security Posture):\n    *   Master Data Collections: `teachers`, `academicUnits`, and `schedulingRules` are established as top-level collections. Documents within these collections share a homogeneous security posture, primarily managed by administrators.\n    *   Timetables & ClassSessions Hierarchy: `Timetable` entities are stored in a top-level `timetables` collection. `ClassSession` entities are logically nested as a subcollection under their respective `Timetable` (`/timetables/{timetableId}/classSessions/{classSessionId}`). This hierarchy clearly indicates ownership and ensures that `ClassSession` documents are consistently governed by the `timetableStatus` (via denormalization) and administrative controls of their parent `Timetable`.\n\n3.  Access Modeling:\n    *   Admin Access: Assumed administrative users (identified by `request.auth.uid` within the established admin context) will have full Create, Read, Update, and Delete (CRUD) privileges across all collections.\n    *   Viewer Access: Non-admin users will have read-only access to `Timetable` documents where `status == 'PUBLISHED'` and their associated `ClassSession` documents where `timetableStatus == 'PUBLISHED'`. This strategy ensures QAP-compliant read operations.\n\n4.  Data Clarity and Predictability:\n    *   Explicit State Modeling: The `Timetable.status` field ('DRAFT', 'PUBLISHED', 'ARCHIVED') explicitly defines the lifecycle state of a timetable, promoting clear logic and rule enforcement.\n    *   Predictable Schema & Naming: Consistent and descriptive naming conventions (e.g., `teacherId`, `unitId`, `timetableId`) are used for collection and document IDs, enhancing readability and maintainability."
+    ]
   }
 }

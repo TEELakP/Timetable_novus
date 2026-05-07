@@ -24,6 +24,13 @@ export interface Unit {
   sessionsPerWeek: number;
 }
 
+export interface Room {
+  id: string;
+  name: string;
+  capacity: number;
+  campus: Campus;
+}
+
 export interface TimetableEntry {
   id: string; // Internal id for tracking UI
   unitId: string;
@@ -38,6 +45,7 @@ export interface TimetableEntry {
 export interface TimetableState {
   teachers: Teacher[];
   units: Unit[];
+  rooms: Room[];
   schedulingRules: string[];
   timetable: TimetableEntry[];
 }

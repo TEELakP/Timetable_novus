@@ -1,86 +1,40 @@
-/**
- * SMART TIMETABLE MANAGER - SECURITY POLICY
- * 
- * CORE PHILOSOPHY
- * This ruleset implements a centralized administrative control model. Access is bifurcated 
- * between 'Administrators' who manage the master data (Teachers, Units, Rules) and the 
- * schedule generation, and 'Viewers' (authenticated users) who can consume the finalized 
- * scheduling output.
- * 
- * KEY SECURITY DECISIONS
- * - Administrative RBAC: For the prototype, all signed-in users are granted admin privileges.
- * - Authorization Independence (QAP): ClassSession documents denormalize the 'status' of 
- *   their parent Timetable.
- */
 
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- GLOBAL HELPER FUNCTIONS ---
-
-    /** @description Checks if the user is authenticated. */
     function isSignedIn() {
       return request.auth != null;
     }
 
-    /** @description Checks if the user has administrative privileges. */
     function isAdmin() {
-      // RELAXED FOR PROTOTYPE: Any signed-in user can perform admin actions.
-      // In a production app, you would check a specific /admins/ collection or custom claim.
+      // Relaxed for prototype: all signed-in users are admins
       return isSignedIn();
     }
 
-    /** @description Checks if the document exists and the user is an admin. */
-    function isExistingAdmin() {
-      return resource != null && isAdmin();
-    }
-
-    /** @description Validates that the internal ID of a new document matches its path ID. */
-    function isIdConsistent(id) {
-      return request.resource.data.id == id;
-    }
-
-    // --- COLLECTION RULES ---
-
     match /teachers/{teacherId} {
-      allow get, list: if isSignedIn();
-      allow create: if isAdmin() && isIdConsistent(teacherId);
-      allow update: if isExistingAdmin() && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingAdmin();
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     match /academicUnits/{unitId} {
-      allow get, list: if isSignedIn();
-      allow create: if isAdmin() && isIdConsistent(unitId);
-      allow update: if isExistingAdmin() && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingAdmin();
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
-    match /schedulingRules/{ruleId} {
-      allow get, list: if isAdmin();
-      allow create: if isAdmin() && isIdConsistent(ruleId);
-      allow update: if isExistingAdmin() && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingAdmin();
+    match /rooms/{roomId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     match /timetables/{timetableId} {
-      allow get, list: if isAdmin() || (isSignedIn() && resource.data.status == 'PUBLISHED');
-      allow create: if isAdmin() && isIdConsistent(timetableId);
-      allow update: if isExistingAdmin() && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingAdmin();
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
 
       match /classSessions/{sessionId} {
-        allow get, list: if isAdmin() || (isSignedIn() && resource.data.timetableStatus == 'PUBLISHED');
-        allow create: if isAdmin() && isIdConsistent(sessionId) && request.resource.data.timetableId == timetableId;
-        allow update: if isExistingAdmin() && request.resource.data.id == resource.data.id && request.resource.data.timetableId == resource.data.timetableId;
-        allow delete: if isExistingAdmin();
+        allow read: if isSignedIn();
+        allow write: if isAdmin();
       }
-    }
-
-    match /admins/{uid} {
-      allow read: if isSignedIn();
-      allow write: if false;
     }
   }
 }
