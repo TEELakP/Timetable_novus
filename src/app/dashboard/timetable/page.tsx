@@ -26,7 +26,7 @@ import { TimetableEntry, Teacher, Unit, Room, Day } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc, deleteDoc, writeBatch } from "firebase/firestore"
+import { collection, doc, writeBatch } from "firebase/firestore"
 import { deleteDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
@@ -71,7 +71,7 @@ export default function TimetablePage() {
     // Calculate end time based on unit duration
     const startHour = parseInt(selectedTime.split(':')[0])
     const duration = unit?.durationHours || 1
-    const endHour = Math.min(startHour + duration, 21)
+    const endHour = Math.min(startHour + duration, 24)
     const endTime = `${endHour.toString().padStart(2, '0')}:00`
 
     const newSession: TimetableEntry = {
@@ -212,7 +212,7 @@ export default function TimetablePage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Timetable Matching</h2>
-          <p className="text-muted-foreground">Match teachers, units, and rooms into the weekly schedule.</p>
+          <p className="text-muted-foreground">Match teachers, units, and rooms into the 24-hour weekly schedule.</p>
         </div>
         <div className="flex items-center gap-2">
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
@@ -300,7 +300,7 @@ export default function TimetablePage() {
                   <Button variant="ghost" size="icon" className="h-8 w-8">
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
-                  <h3 className="font-semibold">Interactive Weekly Grid</h3>
+                  <h3 className="font-semibold">Interactive Weekly Grid (24h)</h3>
                   <Button variant="ghost" size="icon" className="h-8 w-8">
                     <ChevronRight className="h-4 w-4" />
                   </Button>
@@ -320,7 +320,7 @@ export default function TimetablePage() {
                 className="grid min-w-[800px] border-b"
                 style={{ 
                   gridTemplateColumns: "80px repeat(5, 1fr)",
-                  gridTemplateRows: `48px repeat(${HOURS.length}, 96px)`
+                  gridTemplateRows: `48px repeat(${HOURS.length}, 64px)`
                 }}
               >
                 {/* Headers */}
@@ -336,7 +336,7 @@ export default function TimetablePage() {
                   <React.Fragment key={hour}>
                     <div 
                       style={{ gridRow: rowIdx + 2, gridColumn: 1 }} 
-                      className="border-b border-r flex items-center justify-center text-xs font-mono text-muted-foreground"
+                      className="border-b border-r flex items-center justify-center text-xs font-mono text-muted-foreground bg-muted/5"
                     >
                       {hour}
                     </div>
@@ -351,7 +351,7 @@ export default function TimetablePage() {
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
-                                className="h-6 w-6 rounded-full bg-muted"
+                                className="h-6 w-6 rounded-full bg-muted/50 hover:bg-muted"
                                 onClick={() => {
                                   setSelectedDay(day as Day)
                                   setSelectedTime(hour)
@@ -384,20 +384,20 @@ export default function TimetablePage() {
                         gridColumn: col, 
                         gridRow: `${row} / span ${duration}` 
                       }} 
-                      className="p-1 z-10"
+                      className="p-0.5 z-10"
                     >
                       <div 
                         className={cn(
-                          "w-full h-full rounded-md p-3 text-white shadow-lg transition-all hover:scale-[1.01] cursor-pointer overflow-hidden flex flex-col relative group",
-                          unit?.type === 'theory' ? "bg-blue-500 hover:bg-blue-600" : "bg-orange-500 hover:bg-orange-600",
+                          "w-full h-full rounded p-2 text-white shadow transition-all hover:scale-[1.01] cursor-pointer overflow-hidden flex flex-col relative group border border-white/10",
+                          unit?.type === 'theory' ? "bg-blue-600 hover:bg-blue-700" : "bg-orange-600 hover:bg-orange-700",
                         )}
                       >
-                        <div className="flex justify-between items-start mb-1">
-                          <span className="text-[10px] font-black uppercase tracking-widest opacity-80">{unit?.type}</span>
+                        <div className="flex justify-between items-start mb-0.5">
+                          <span className="text-[8px] font-black uppercase tracking-widest opacity-70">{unit?.type}</span>
                           <Button 
                             variant="ghost" 
                             size="icon" 
-                            className="h-6 w-6 text-white hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="h-5 w-5 text-white hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity p-0"
                             onClick={(e) => {
                               e.stopPropagation()
                               handleDeleteSession(entry.id)
@@ -406,13 +406,13 @@ export default function TimetablePage() {
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
-                        <p className="text-[13px] font-bold line-clamp-3 leading-tight mb-2">{unit?.name}</p>
-                        <div className="mt-auto flex flex-col gap-1">
-                          <p className="text-[11px] opacity-90 truncate flex items-center gap-1.5 font-medium">
-                            <Users className="h-3 w-3" /> {teacher?.name}
+                        <p className="text-[11px] font-bold line-clamp-2 leading-tight mb-1">{unit?.name}</p>
+                        <div className="mt-auto flex flex-col gap-0.5">
+                          <p className="text-[9px] opacity-90 truncate flex items-center gap-1 font-medium">
+                            <Users className="h-2.5 w-2.5" /> {teacher?.name}
                           </p>
-                          <p className="text-[10px] font-mono opacity-80 flex items-center gap-1.5">
-                            <DoorOpen className="h-3 w-3" /> {entry.room}
+                          <p className="text-[9px] font-mono opacity-80 flex items-center gap-1">
+                            <DoorOpen className="h-2.5 w-2.5" /> {entry.room}
                           </p>
                         </div>
                       </div>
