@@ -76,15 +76,6 @@ export default function PrintPage() {
     })
   }, [sessions, filterCampus, filterTeacher, filterUnit, filterType, rooms, units])
 
-  const groupedSessions = useMemo(() => {
-    const groups: Record<string, TimetableEntry[]> = {}
-    DAYS.forEach(day => groups[day] = [])
-    filteredSessions.forEach(s => {
-      groups[s.day].push(s)
-    })
-    return groups
-  }, [filteredSessions])
-
   const handlePrint = () => {
     window.print()
   }
@@ -102,9 +93,9 @@ export default function PrintPage() {
       <div className="flex items-center justify-between print:hidden">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Printable View</h2>
-          <p className="text-muted-foreground text-sm">Clean tabular view optimized for printing or PDF save.</p>
+          <p className="text-muted-foreground text-sm">Unified weekly timetable optimized for PDF and paper distribution.</p>
         </div>
-        <Button onClick={handlePrint} variant="default">
+        <Button onClick={handlePrint} variant="default" className="bg-primary hover:bg-primary/90">
           <Printer className="mr-2 h-4 w-4" /> Print Timetable
         </Button>
       </div>
@@ -178,69 +169,71 @@ export default function PrintPage() {
         </div>
       </div>
 
-      <div className="bg-white p-8 rounded-lg border shadow-sm print:shadow-none print:border-none print:p-0">
+      <div className="bg-white p-8 rounded-lg border shadow-sm print:shadow-none print:border-none print:p-0 print:w-full">
         <div className="mb-8 text-center border-b pb-6 print:mb-4">
           <h1 className="text-2xl font-black uppercase tracking-tighter text-primary">Novus Academic Timetable</h1>
-          <p className="text-muted-foreground text-xs uppercase font-bold tracking-widest mt-1">Generated: {new Date().toLocaleDateString('en-AU')}</p>
+          <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-widest mt-1">Weekly Institutional Schedule • Generated: {new Date().toLocaleDateString('en-AU')}</p>
         </div>
 
-        <div className="space-y-12 print:space-y-6">
-          {DAYS.map(day => {
-            const daySessions = groupedSessions[day]
-            if (daySessions.length === 0) return null
-
-            return (
-              <div key={day} className="space-y-3 break-inside-avoid">
-                <div className="flex items-center gap-2 border-b-2 border-primary pb-1">
-                  <CalendarDays className="h-5 w-5 text-primary" />
-                  <h3 className="text-lg font-black uppercase tracking-tight">{day}</h3>
-                </div>
+        <div className="rounded-md border overflow-hidden">
+          <Table>
+            <TableHeader className="bg-muted/50 print:bg-transparent">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[12%] font-bold text-[10px] uppercase text-primary border-r">Day</TableHead>
+                <TableHead className="w-[28%] font-bold text-[10px] uppercase text-primary border-r">Unit Name</TableHead>
+                <TableHead className="w-[25%] font-bold text-[10px] uppercase text-primary border-r">Trainer</TableHead>
+                <TableHead className="w-[15%] font-bold text-[10px] uppercase text-primary border-r">Time</TableHead>
+                <TableHead className="w-[20%] font-bold text-[10px] uppercase text-primary">Location</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredSessions.map((session, index) => {
+                const unit = units?.find(u => u.id === session.unitId)
+                const teacher = teachers?.find(t => t.id === session.teacherId)
+                const isFirstOfDay = index === 0 || filteredSessions[index - 1].day !== session.day
                 
-                <Table>
-                  <TableHeader className="bg-muted/50 print:bg-transparent">
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="w-[30%] font-bold text-xs uppercase text-primary">Unit Name</TableHead>
-                      <TableHead className="w-[30%] font-bold text-xs uppercase text-primary">Trainer</TableHead>
-                      <TableHead className="w-[20%] font-bold text-xs uppercase text-primary">Time</TableHead>
-                      <TableHead className="w-[20%] font-bold text-xs uppercase text-primary">Location</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {daySessions.map((session) => {
-                      const unit = units?.find(u => u.id === session.unitId)
-                      const teacher = teachers?.find(t => t.id === session.teacherId)
-                      return (
-                        <TableRow key={session.id} className="hover:bg-transparent border-b">
-                          <TableCell className="font-bold py-3">
-                            <div className="flex flex-col">
-                              <span className="text-sm">{unit?.name}</span>
-                              <span className="text-[10px] text-muted-foreground uppercase font-semibold">
-                                {unit?.type === 'theory' ? 'Classroom' : unit?.type === 'practical' ? 'Workshop' : 'Online'}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-sm">{teacher?.name}</TableCell>
-                          <TableCell className="text-sm font-mono font-medium">{session.startTime} - {session.endTime}</TableCell>
-                          <TableCell className="text-sm">{session.room}</TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )
-          })}
+                return (
+                  <TableRow key={session.id} className={cn("hover:bg-transparent border-b", isFirstOfDay && "border-t-2 border-primary/20")}>
+                    <TableCell className={cn("font-black text-xs uppercase text-primary/70 border-r", !isFirstOfDay && "text-transparent")}>
+                      {session.day}
+                    </TableCell>
+                    <TableCell className="font-bold py-3 border-r">
+                      <div className="flex flex-col">
+                        <span className="text-sm">{unit?.name}</span>
+                        <span className="text-[9px] text-muted-foreground uppercase font-semibold">
+                          {unit?.type === 'theory' ? 'Classroom' : unit?.type === 'practical' ? 'Workshop' : 'Online'}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm border-r">{teacher?.name}</TableCell>
+                    <TableCell className="text-sm font-mono font-medium border-r">{session.startTime} - {session.endTime}</TableCell>
+                    <TableCell className="text-sm">{session.room}</TableCell>
+                  </TableRow>
+                )
+              })}
+              {filteredSessions.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-24 text-center text-muted-foreground italic">
+                    No sessions match the current criteria for the week.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </div>
 
-        {Object.values(groupedSessions).every(g => g.length === 0) && (
-          <div className="py-24 text-center text-muted-foreground italic">
-            No sessions match the current filter criteria for printing.
-          </div>
-        )}
+        <div className="mt-8 pt-6 border-t text-[10px] text-muted-foreground flex justify-between items-center print:mt-4">
+          <p>This document is for academic use and distribution only.</p>
+          <p>Page 1 of 1</p>
+        </div>
       </div>
 
       <style jsx global>{`
         @media print {
+          @page {
+            size: auto;
+            margin: 10mm;
+          }
           body {
             background: white !important;
             padding: 0 !important;
@@ -253,12 +246,27 @@ export default function PrintPage() {
             padding: 0 !important;
             margin: 0 !important;
             width: 100% !important;
+            display: block !important;
           }
           .flex-1 {
             display: block !important;
           }
-          .break-inside-avoid {
-            break-inside: avoid;
+          .rounded-lg {
+            border-radius: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+          }
+          .border {
+            border-color: #e5e7eb !important;
+          }
+          table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+          }
+          th {
+            background-color: #f3f4f6 !important;
+            color: black !important;
+            -webkit-print-color-adjust: exact;
           }
         }
       `}</style>
