@@ -1,5 +1,6 @@
 
 export type Day = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday';
+export type Campus = 'Ultimo' | 'Gosford' | 'Perth' | 'Online';
 
 export interface TeacherAvailability {
   day: Day;
@@ -12,6 +13,7 @@ export interface Teacher {
   name: string;
   availability: TeacherAvailability[];
   qualifiedUnits: string[]; // IDs of units
+  campuses: Campus[];
 }
 
 export interface Unit {

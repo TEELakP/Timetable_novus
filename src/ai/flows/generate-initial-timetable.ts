@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview This file implements a Genkit flow for generating an initial conflict-free timetable.
@@ -22,6 +23,7 @@ const TeacherSchema = z.object({
   name: z.string().describe('Name of the teacher.'),
   availability: z.array(TeacherAvailabilitySlotSchema).describe('List of available time slots for the teacher.'),
   qualifiedUnits: z.array(z.string()).describe('IDs of units the teacher is qualified to teach.'),
+  campuses: z.array(z.enum(['Ultimo', 'Gosford', 'Perth', 'Online'])).describe('Campuses where the teacher can work.'),
 });
 
 const UnitSchema = z.object({
@@ -35,7 +37,7 @@ const UnitSchema = z.object({
 const GenerateInitialTimetableInputSchema = z.object({
   teachers: z.array(TeacherSchema).describe('List of available teachers with their profiles.'),
   units: z.array(UnitSchema).describe('List of academic units to be scheduled.'),
-  schedulingRules: z.array(z.string()).describe('A list of rules that the timetable must adhere to. Examples: "Teachers cannot teach two classes simultaneously", "Teachers must be qualified for assigned units", "Practical units require special labs".'),
+  schedulingRules: z.array(z.string()).describe('A list of rules that the timetable must adhere to.'),
 });
 export type GenerateInitialTimetableInput = z.infer<typeof GenerateInitialTimetableInputSchema>;
 
@@ -46,12 +48,13 @@ const TimetableEntrySchema = z.object({
   day: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']).describe('Day of the week for the session.'),
   startTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Start time of the session in HH:MM format.'),
   endTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'End time of the session in HH:MM format.'),
-  room: z.string().describe('Assigned room for the session (e.g., "Lecture Hall 1", "Lab 3").'),
+  room: z.string().describe('Assigned room for the session.'),
+  campus: z.enum(['Ultimo', 'Gosford', 'Perth', 'Online']).describe('Assigned campus for the session.'),
 });
 
 const GenerateInitialTimetableOutputSchema = z.object({
-  timetable: z.array(TimetableEntrySchema).describe('A generated list of scheduled timetable entries, representing a conflict-free weekly timetable.'),
-  conflicts: z.array(z.string()).describe('A list of any detected conflicts or unfulfilled rules. This array should be empty if the timetable is conflict-free and successfully generated.'),
+  timetable: z.array(TimetableEntrySchema).describe('A generated list of scheduled timetable entries.'),
+  conflicts: z.array(z.string()).describe('A list of any detected conflicts.'),
 });
 export type GenerateInitialTimetableOutput = z.infer<typeof GenerateInitialTimetableOutputSchema>;
 
@@ -60,7 +63,7 @@ const generateTimetablePrompt = ai.definePrompt({
   name: 'generateInitialTimetablePrompt',
   input: { schema: GenerateInitialTimetableInputSchema },
   output: { schema: GenerateInitialTimetableOutputSchema },
-  prompt: `You are an expert timetable generator. Your task is to create a conflict-free weekly timetable for academic units and teachers, strictly adhering to the provided rules, teacher availabilities, and qualifications.
+  prompt: `You are an expert timetable generator for multiple campuses (Ultimo, Gosford, Perth, Online). Your task is to create a conflict-free weekly timetable.
 
 **Teachers:**
 \`\`\`json
@@ -79,19 +82,15 @@ const generateTimetablePrompt = ai.definePrompt({
 \`\`\`
 
 Generate a timetable that is completely conflict-free. Ensure that:
-1.  Each unit's required sessions per week are met.
-2.  Teachers only teach units they are qualified for.
-3.  Teachers only teach during their available times.
-4.  No teacher is scheduled for two classes simultaneously.
-5.  Assign a generic room (e.g., "Room A", "Lab B") for each session, considering unit type (e.g., "Lab" for practical, "Lecture Hall" for theory). Rooms should be descriptive and make sense for the unit type.
+1.  Teachers are only assigned to campuses they are authorized for.
+2.  Each unit's required sessions per week are met.
+3.  Teachers only teach units they are qualified for.
+4.  Teachers only teach during their available times.
+5.  No teacher is scheduled for two classes simultaneously across ANY campus.
 6.  The timetable should be for a 5-day week (Monday to Friday).
-7.  The timetable should be as compact as possible, avoiding unnecessary gaps for teachers where possible, but always prioritizing conflict avoidance.
-8.  Each session duration must match the 'durationHours' of the unit.
-9.  Session start and end times should be on the hour or half-hour (e.g., 09:00, 09:30).
+7.  Session duration must match the 'durationHours' of the unit.
 
-If it\'s impossible to create a conflict-free timetable given the constraints, provide a detailed explanation of the conflicts in the \`conflicts\` array. Otherwise, the \`conflicts\` array should be empty.
-
-Your output must be a valid JSON object matching the provided schema.`,
+Output a valid JSON object matching the schema.`,
 });
 
 const generateInitialTimetableFlow = ai.defineFlow(
