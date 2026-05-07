@@ -15,7 +15,8 @@ import {
   Trash2,
   DoorOpen,
   Layers,
-  Filter
+  Filter,
+  CalendarDays
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -33,7 +34,7 @@ import { collection, doc, writeBatch } from "firebase/firestore"
 import { deleteDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
-const ROW_HEIGHT = 64
+const ROW_HEIGHT = 80 // Increased row height for single-day clarity
 
 export default function TimetablePage() {
   const { toast } = useToast()
@@ -56,22 +57,28 @@ export default function TimetablePage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [filterCampus, setFilterCampus] = useState<Campus | "All">("All")
+  const [currentDayIndex, setCurrentDayIndex] = useState(0)
   
+  const currentDay = DAYS[currentDayIndex]
+
   // New Session Form State
   const [selectedUnit, setSelectedUnit] = useState("")
   const [selectedTeacher, setSelectedTeacher] = useState("")
   const [selectedRoom, setSelectedRoom] = useState("")
-  const [selectedDay, setSelectedDay] = useState<Day>("Monday")
   const [selectedTime, setSelectedTime] = useState("09:00")
 
   const filteredSessions = useMemo(() => {
     if (!sessions) return []
-    if (filterCampus === "All") return sessions
-    return sessions.filter(s => {
-      const room = rooms?.find(r => r.name === s.room)
-      return room?.campus === filterCampus
-    })
-  }, [sessions, filterCampus, rooms])
+    let data = sessions.filter(s => s.day === currentDay)
+    
+    if (filterCampus !== "All") {
+      data = data.filter(s => {
+        const room = rooms?.find(r => r.name === s.room)
+        return room?.campus === filterCampus
+      })
+    }
+    return data
+  }, [sessions, currentDay, filterCampus, rooms])
 
   const handleAddSession = () => {
     if (!selectedUnit || !selectedTeacher || !selectedRoom) {
@@ -92,7 +99,7 @@ export default function TimetablePage() {
       unitId: selectedUnit,
       teacherId: selectedTeacher,
       room: rooms?.find(r => r.id === selectedRoom)?.name || "Unknown",
-      day: selectedDay,
+      day: currentDay,
       startTime: selectedTime,
       endTime: endTime
     }
@@ -100,7 +107,7 @@ export default function TimetablePage() {
     setDocumentNonBlocking(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionId), newSession, { merge: true })
     
     setIsAddOpen(false)
-    toast({ title: "Session Added", description: "Successfully matched entities and scheduled session." })
+    toast({ title: "Session Added", description: `Scheduled ${unit?.name} for ${currentDay}.` })
   }
 
   const handleDeleteSession = (id: string) => {
@@ -110,11 +117,7 @@ export default function TimetablePage() {
 
   const handleGenerate = async () => {
     if (!teachers?.length || !units?.length || !rooms?.length) {
-      toast({
-        title: "Incomplete Data",
-        description: "Please ensure Teachers, Units, and Rooms are defined.",
-        variant: "destructive"
-      })
+      toast({ title: "Incomplete Data", description: "Missing Teacher, Unit, or Room definitions.", variant: "destructive" })
       return
     }
 
@@ -152,20 +155,20 @@ export default function TimetablePage() {
       })
       
       await batch.commit()
-      
-      toast({
-        title: "AI Timetable Generated",
-        description: `Successfully scheduled ${result.timetable.length} sessions.`,
-      })
+      toast({ title: "AI Timetable Generated", description: `Successfully scheduled ${result.timetable.length} sessions.` })
     } catch (error) {
       console.error(error)
-      toast({
-        title: "Generation Failed",
-        description: "An error occurred while running the AI scheduler.",
-        variant: "destructive"
-      })
+      toast({ title: "Generation Failed", description: "Error running the AI scheduler.", variant: "destructive" })
     } finally {
       setIsGenerating(false)
+    }
+  }
+
+  const navigateDay = (direction: 'next' | 'prev') => {
+    if (direction === 'next') {
+      setCurrentDayIndex((prev) => (prev + 1) % DAYS.length)
+    } else {
+      setCurrentDayIndex((prev) => (prev - 1 + DAYS.length) % DAYS.length)
     }
   }
 
@@ -200,11 +203,9 @@ export default function TimetablePage() {
     })
   }
 
-  // Layout Logic for Overlapping Sessions
-  const getPositionedSessions = (day: string) => {
-    const daySessions = filteredSessions.filter(s => s.day === day)
-    const sorted = [...daySessions].sort((a, b) => a.startTime.localeCompare(b.startTime))
-    
+  // Layout Logic for Overlapping Sessions (Side-by-side)
+  const positionedSessions = useMemo(() => {
+    const sorted = [...filteredSessions].sort((a, b) => a.startTime.localeCompare(b.startTime))
     const columns: TimetableEntry[][] = []
     
     sorted.forEach(session => {
@@ -229,7 +230,7 @@ export default function TimetablePage() {
         colSpan: columns.length
       }))
     )
-  }
+  }, [filteredSessions])
 
   if (loadingTeachers || loadingUnits || loadingRooms || loadingSessions) {
     return (
@@ -243,13 +244,13 @@ export default function TimetablePage() {
     <div className="flex-1 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight font-headline">Institutional Timetable</h2>
-          <p className="text-muted-foreground">Manage overlapping class sessions across all campuses.</p>
+          <h2 className="text-3xl font-bold tracking-tight font-headline">Daily Planner</h2>
+          <p className="text-muted-foreground">View overlapping sessions side-by-side for high-resolution scheduling.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-md border text-xs">
+          <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-md border text-xs mr-2">
             <Filter className="h-3 w-3 ml-2" />
-            <span className="font-semibold">Campus:</span>
+            <span className="font-semibold">Filter:</span>
             <Select value={filterCampus} onValueChange={(v: any) => setFilterCampus(v)}>
               <SelectTrigger className="h-8 border-none bg-transparent shadow-none w-[120px]">
                 <SelectValue />
@@ -264,13 +265,13 @@ export default function TimetablePage() {
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm">
-                <Plus className="mr-2 h-4 w-4" /> Add Matching
+                <Plus className="mr-2 h-4 w-4" /> Add Match
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Schedule a Class Session</DialogTitle>
-                <DialogDescription>Manually match a teacher with a unit and a room.</DialogDescription>
+                <DialogTitle>Add Match for {currentDay}</DialogTitle>
+                <DialogDescription>Match a teacher, unit, and room for this day.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
@@ -300,25 +301,14 @@ export default function TimetablePage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Day</Label>
-                    <Select value={selectedDay} onValueChange={(v: Day) => setSelectedDay(v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Start Time</Label>
-                    <Select value={selectedTime} onValueChange={setSelectedTime}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {HOURS.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div className="space-y-2">
+                  <Label>Start Time</Label>
+                  <Select value={selectedTime} onValueChange={setSelectedTime}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {HOURS.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <DialogFooter>
@@ -342,148 +332,149 @@ export default function TimetablePage() {
           <Card className="overflow-hidden border-none shadow-xl bg-card/40 backdrop-blur-sm">
             <CardHeader className="bg-muted/30 pb-4 border-b">
               <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-sm">Institution-wide 24h Weekly View</h3>
-                <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wider">
+                <div className="flex items-center gap-4">
+                  <Button variant="ghost" size="icon" onClick={() => navigateDay('prev')}>
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <div className="flex flex-col items-center min-w-[150px]">
+                    <span className="text-xl font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                      <CalendarDays className="h-5 w-5" />
+                      {currentDay}
+                    </span>
+                  </div>
+                  <Button variant="ghost" size="icon" onClick={() => navigateDay('next')}>
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+                <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wider hidden md:flex">
                   <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-500" /> Theory</div>
                   <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-orange-500" /> Practical</div>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="p-0 overflow-x-auto">
-              <div className="min-w-[1200px] relative">
+            <CardContent className="p-0">
+              <div className="relative overflow-y-auto max-h-[1000px]">
                 {/* Time Grid Background */}
                 <div 
-                  className="grid border-b"
+                  className="grid border-b w-full"
                   style={{ 
-                    gridTemplateColumns: "80px repeat(7, 1fr)",
-                    gridTemplateRows: `48px repeat(${HOURS.length}, ${ROW_HEIGHT}px)`
+                    gridTemplateColumns: "100px 1fr",
+                    gridTemplateRows: `repeat(${HOURS.length}, ${ROW_HEIGHT}px)`
                   }}
                 >
-                  <div className="row-start-1 col-start-1 bg-muted/20 border-b border-r" />
-                  {DAYS.map((day, i) => (
-                    <div key={day} style={{ gridColumn: i + 2 }} className="row-start-1 border-b border-r flex items-center justify-center font-bold text-xs bg-muted/20 uppercase tracking-widest text-muted-foreground">
-                      {day}
-                    </div>
-                  ))}
-
                   {HOURS.map((hour, rowIdx) => (
                     <React.Fragment key={hour}>
                       <div 
-                        style={{ gridRow: rowIdx + 2, gridColumn: 1 }} 
-                        className="border-b border-r flex items-center justify-center text-[10px] font-mono text-muted-foreground bg-muted/5"
+                        style={{ gridRow: rowIdx + 1, gridColumn: 1 }} 
+                        className="border-b border-r flex items-center justify-center text-xs font-mono text-muted-foreground bg-muted/5 sticky left-0 z-20"
                       >
                         {hour}
                       </div>
-                      {DAYS.map((day, colIdx) => (
-                        <div 
-                          key={`${day}-${hour}`} 
-                          style={{ gridRow: rowIdx + 2, gridColumn: colIdx + 2 }} 
-                          className="border-b border-r group relative bg-background/30"
-                        >
-                          <div className="w-full h-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-0">
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-6 w-6 rounded-full bg-primary/10 hover:bg-primary/20"
-                              onClick={() => {
-                                setSelectedDay(day as Day)
-                                setSelectedTime(hour)
-                                setIsAddOpen(true)
-                              }}
-                            >
-                              <Plus className="h-3 w-3 text-primary" />
-                            </Button>
-                          </div>
+                      <div 
+                        style={{ gridRow: rowIdx + 1, gridColumn: 2 }} 
+                        className="border-b group relative bg-background/30"
+                      >
+                        <div className="w-full h-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-0">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 rounded-full bg-primary/10 hover:bg-primary/20"
+                            onClick={() => {
+                              setSelectedTime(hour)
+                              setIsAddOpen(true)
+                            }}
+                          >
+                            <Plus className="h-4 w-4 text-primary" />
+                          </Button>
                         </div>
-                      ))}
+                      </div>
                     </React.Fragment>
                   ))}
                 </div>
 
-                {/* Session Overlays with Multi-Lane Support */}
-                {DAYS.map((day, dayIdx) => {
-                  const daySessions = getPositionedSessions(day)
-                  return daySessions.map(entry => {
+                {/* Session Overlays with Side-by-Side Multi-Lane Support */}
+                <div className="absolute top-0 left-[100px] right-0 h-full pointer-events-none">
+                  {positionedSessions.map(entry => {
                     const unit = units?.find(u => u.id === entry.unitId)
                     const teacher = teachers?.find(t => t.id === entry.teacherId)
                     const startHour = parseInt(entry.startTime.split(':')[0])
-                    const duration = parseInt(entry.endTime.split(':')[0]) - startHour
+                    const duration = (parseInt(entry.endTime.split(':')[0]) || 24) - startHour
                     
-                    const leftOffset = (entry.colIdx / entry.colSpan) * 100
-                    const width = (1 / entry.colSpan) * 100
+                    const laneWidth = 100 / entry.colSpan
+                    const leftPos = entry.colIdx * laneWidth
 
                     return (
                       <div 
                         key={entry.id}
-                        className="absolute z-10 transition-all p-0.5"
+                        className="absolute z-10 p-1 pointer-events-auto transition-all"
                         style={{
-                          top: 48 + (startHour * ROW_HEIGHT),
+                          top: startHour * ROW_HEIGHT,
                           height: duration * ROW_HEIGHT,
-                          left: `calc(80px + (${dayIdx} * (100% - 80px) / 7) + (${leftOffset}% * (100% - 80px) / 7 / 100))`,
-                          width: `calc((${width}% * (100% - 80px) / 7 / 100) - 2px)`
+                          left: `${leftPos}%`,
+                          width: `${laneWidth}%`
                         }}
                       >
                         <div 
                           className={cn(
-                            "w-full h-full rounded border border-white/20 shadow-lg p-2 text-white flex flex-col group overflow-hidden cursor-pointer",
-                            unit?.type === 'theory' ? "bg-blue-600/95 hover:bg-blue-700" : "bg-orange-600/95 hover:bg-orange-700"
+                            "w-full h-full rounded-lg border border-white/20 shadow-xl p-3 text-white flex flex-col group overflow-hidden cursor-pointer",
+                            unit?.type === 'theory' ? "bg-blue-600/90 hover:bg-blue-700" : "bg-orange-600/90 hover:bg-orange-700"
                           )}
                         >
-                          <div className="flex justify-between items-start">
-                             <div className="text-[7px] font-black uppercase bg-black/20 px-1 rounded">{unit?.type}</div>
+                          <div className="flex justify-between items-start mb-1">
+                             <div className="text-[9px] font-black uppercase bg-black/30 px-2 py-0.5 rounded-full">{unit?.type}</div>
                              <Button 
                                variant="ghost" 
                                size="icon" 
-                               className="h-4 w-4 text-white hover:bg-white/20 opacity-0 group-hover:opacity-100"
+                               className="h-5 w-5 text-white hover:bg-white/20 opacity-0 group-hover:opacity-100"
                                onClick={(e) => {
                                  e.stopPropagation()
                                  handleDeleteSession(entry.id)
                                }}
                              >
-                               <Trash2 className="h-2.5 w-2.5" />
+                               <Trash2 className="h-3 w-3" />
                              </Button>
                           </div>
 
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <div className="flex-1 min-h-0">
-                                <p className="text-[10px] font-bold leading-tight mt-1 line-clamp-2 hover:underline">
+                                <p className="text-sm font-black leading-tight hover:underline">
                                   {unit?.name}
                                 </p>
                               </div>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent className="w-64">
+                            <DropdownMenuContent className="w-72">
                               <DropdownMenuLabel className="flex items-center gap-2">
                                 <Layers className="h-4 w-4" />
-                                Subject Timeline
+                                Subject Schedule
                               </DropdownMenuLabel>
                               <DropdownMenuSeparator />
                               {sessions?.filter(s => s.unitId === entry.unitId).map(s => (
                                 <DropdownMenuItem key={s.id} className="text-xs flex flex-col items-start py-2">
-                                  <div className="font-semibold">{s.day} {s.startTime}-{s.endTime}</div>
-                                  <div className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                    <DoorOpen className="h-2.5 w-2.5" /> {s.room} • <Users className="h-2.5 w-2.5" /> {teachers?.find(t => t.id === s.teacherId)?.name}
+                                  <div className="font-bold">{s.day} {s.startTime}-{s.endTime}</div>
+                                  <div className="text-[10px] text-muted-foreground flex items-center gap-2 mt-0.5">
+                                    <DoorOpen className="h-3 w-3" /> {s.room} • <Users className="h-3 w-3" /> {teachers?.find(t => t.id === s.teacherId)?.name}
                                   </div>
                                 </DropdownMenuItem>
                               ))}
                             </DropdownMenuContent>
                           </DropdownMenu>
 
-                          <div className="mt-auto space-y-0.5">
-                            <div className="flex items-center gap-1 text-[8px] opacity-80">
-                               <Users className="h-2 w-2" />
-                               <span className="truncate">{teacher?.name}</span>
+                          <div className="mt-auto space-y-1">
+                            <div className="flex items-center gap-2 text-[11px] font-semibold opacity-90 truncate">
+                               <Users className="h-3 w-3 shrink-0" />
+                               {teacher?.name}
                             </div>
-                            <div className="flex items-center gap-1 text-[8px] opacity-80 font-mono">
-                               <DoorOpen className="h-2 w-2" />
-                               <span className="truncate">{entry.room}</span>
+                            <div className="flex items-center gap-2 text-[11px] font-mono opacity-90 truncate">
+                               <DoorOpen className="h-3 w-3 shrink-0" />
+                               {entry.room}
                             </div>
                           </div>
                         </div>
                       </div>
                     )
-                  })
-                })}
+                  })}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -494,35 +485,34 @@ export default function TimetablePage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-lg font-headline flex items-center gap-2">
                 <AlertTriangle className={cn("h-5 w-5", detectedConflicts.length > 0 ? "text-destructive" : "text-muted-foreground")} />
-                Conflict Monitor
+                Daily Integrity
               </CardTitle>
-              <CardDescription className="text-xs">Physical and personnel overlap checks.</CardDescription>
             </CardHeader>
             <CardContent>
-              {detectedConflicts.length > 0 ? (
+              {detectedConflicts.filter(c => c.includes(currentDay)).length > 0 ? (
                 <div className="space-y-3">
-                  {detectedConflicts.map((conflict, idx) => (
+                  {detectedConflicts.filter(c => c.includes(currentDay)).map((conflict, idx) => (
                     <div key={idx} className="p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-[10px] font-medium text-destructive flex gap-2">
                       <AlertTriangle className="h-3 w-3 shrink-0" />
                       {conflict}
                     </div>
                   ))}
-                  <Button variant="outline" className="w-full text-xs h-8 border-destructive/30 hover:bg-destructive/10" size="sm" onClick={handleGenerate}>
-                    Auto-Resolve with AI
+                  <Button variant="outline" className="w-full text-xs h-8 border-destructive/30" size="sm" onClick={handleGenerate}>
+                    AI Re-Balance
                   </Button>
                 </div>
-              ) : sessions && sessions.length > 0 ? (
+              ) : filteredSessions.length > 0 ? (
                 <div className="flex flex-col items-center py-6 text-center space-y-2">
                   <div className="p-3 rounded-full bg-green-500/10">
                     <CheckCircle2 className="h-8 w-8 text-green-500" />
                   </div>
-                  <p className="text-sm font-semibold">Integrity Verified</p>
-                  <p className="text-[10px] text-muted-foreground">All rooms and staff are correctly distributed.</p>
+                  <p className="text-sm font-semibold">Conflict-Free Day</p>
+                  <p className="text-[10px] text-muted-foreground">All resources for {currentDay} are correctly allocated.</p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center py-6 text-center space-y-2 text-muted-foreground opacity-50">
                   <Info className="h-8 w-8" />
-                  <p className="text-xs italic">Awaiting schedule data...</p>
+                  <p className="text-xs italic">No sessions scheduled for today.</p>
                 </div>
               )}
             </CardContent>
@@ -530,29 +520,35 @@ export default function TimetablePage() {
 
           <Card className="shadow-lg border-none">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-headline">Session Distribution</CardTitle>
+              <CardTitle className="text-sm font-headline">Day Summary</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-muted/50 p-3 rounded-lg">
-                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">Total</p>
-                  <p className="text-xl font-black">{sessions?.length || 0}</p>
+                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">Classes</p>
+                  <p className="text-xl font-black">{filteredSessions.length}</p>
                 </div>
                 <div className="bg-muted/50 p-3 rounded-lg">
                   <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">Staff</p>
                   <p className="text-xl font-black">
-                    {new Set(sessions?.map(s => s.teacherId)).size}
+                    {new Set(filteredSessions.map(s => s.teacherId)).size}
                   </p>
                 </div>
               </div>
               <div className="space-y-2 pt-2 border-t">
-                 <p className="text-[10px] font-bold text-muted-foreground uppercase">Top Rooms</p>
-                 {Array.from(new Set(sessions?.map(s => s.room))).slice(0, 3).map(room => (
-                   <div key={room} className="flex justify-between items-center text-[10px]">
-                      <span className="font-medium text-muted-foreground">{room}</span>
-                      <span className="font-black">{sessions?.filter(s => s.room === room).length} sessions</span>
-                   </div>
-                 ))}
+                 <p className="text-[10px] font-bold text-muted-foreground uppercase">Campus Activity</p>
+                 {CAMPUSES.map(campus => {
+                   const count = filteredSessions.filter(s => {
+                     const room = rooms?.find(r => r.name === s.room)
+                     return room?.campus === campus
+                   }).length
+                   return (
+                     <div key={campus} className="flex justify-between items-center text-[10px]">
+                        <span className="font-medium text-muted-foreground">{campus}</span>
+                        <span className="font-black">{count}</span>
+                     </div>
+                   )
+                 })}
               </div>
             </CardContent>
           </Card>
