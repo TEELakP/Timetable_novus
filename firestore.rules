@@ -7,28 +7,10 @@
  * schedule generation, and 'Viewers' (authenticated users) who can consume the finalized 
  * scheduling output.
  * 
- * DATA STRUCTURE
- * - Master Data: /teachers, /academicUnits, and /schedulingRules are top-level collections.
- * - Scheduling: /timetables is a top-level collection containing the schedule metadata.
- * - Details: /timetables/{id}/classSessions is a subcollection containing the individual 
- *   scheduled events.
- * 
  * KEY SECURITY DECISIONS
- * - Administrative RBAC: All write operations across all collections are restricted to users 
- *   identified as administrators. This is verified against an /admins/ collection.
+ * - Administrative RBAC: For the prototype, all signed-in users are granted admin privileges.
  * - Authorization Independence (QAP): ClassSession documents denormalize the 'status' of 
- *   their parent Timetable (timetableStatus). This allows the 'list' rule for sessions 
- *   to check visibility permissions without performing a get() on the parent Timetable.
- * - Prototyping Flexibility: Rules enforce strict ownership and relational integrity for 
- *   IDs, but do not restrict the specific fields or data types of content to allow 
- *   for rapid iterative development.
- * - Public/Private Segregation: Scheduling rules and draft timetables are hidden from 
- *   non-admin users to protect institutional logic and prevent confusion from 
- *   incomplete schedules.
- * 
- * DENORMALIZATION FOR AUTHORIZATION
- * - ClassSession documents MUST contain 'timetableStatus' and 'timetableId' to ensure 
- *   performant and secure list queries.
+ *   their parent Timetable.
  */
 
 rules_version = '2';
@@ -44,7 +26,9 @@ service cloud.firestore {
 
     /** @description Checks if the user has administrative privileges. */
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      // RELAXED FOR PROTOTYPE: Any signed-in user can perform admin actions.
+      // In a production app, you would check a specific /admins/ collection or custom claim.
+      return isSignedIn();
     }
 
     /** @description Checks if the document exists and the user is an admin. */
@@ -59,14 +43,6 @@ service cloud.firestore {
 
     // --- COLLECTION RULES ---
 
-    /** 
-     * @description Rules for Teacher profiles. Publicly readable by signed-in users, managed by admins.
-     * @path /teachers/{teacherId}
-     * @allow (get/list) if signed in.
-     * @allow (create/update/delete) if user is an administrator.
-     * @deny (create) if the internal 'id' does not match the URL parameter.
-     * @principle Administrative control for institutional master data.
-     */
     match /teachers/{teacherId} {
       allow get, list: if isSignedIn();
       allow create: if isAdmin() && isIdConsistent(teacherId);
@@ -74,13 +50,6 @@ service cloud.firestore {
       allow delete: if isExistingAdmin();
     }
 
-    /** 
-     * @description Rules for Academic Units (courses). Publicly readable by signed-in users.
-     * @path /academicUnits/{unitId}
-     * @allow (get/list) if signed in.
-     * @allow (create) if admin and internal id matches.
-     * @principle Structural integrity via ID consistency and admin-only writes.
-     */
     match /academicUnits/{unitId} {
       allow get, list: if isSignedIn();
       allow create: if isAdmin() && isIdConsistent(unitId);
@@ -88,13 +57,6 @@ service cloud.firestore {
       allow delete: if isExistingAdmin();
     }
 
-    /** 
-     * @description Rules for internal Scheduling Logic. Restricted to administrators only.
-     * @path /schedulingRules/{ruleId}
-     * @allow (all) only if user is an administrator.
-     * @deny (get/list) for standard authenticated users to protect proprietary logic.
-     * @principle Strict isolation of system configuration data.
-     */
     match /schedulingRules/{ruleId} {
       allow get, list: if isAdmin();
       allow create: if isAdmin() && isIdConsistent(ruleId);
@@ -102,25 +64,12 @@ service cloud.firestore {
       allow delete: if isExistingAdmin();
     }
 
-    /** 
-     * @description Rules for Timetables. Admins have full access; users can only see 'PUBLISHED' schedules.
-     * @path /timetables/{timetableId}
-     * @allow (get/list) if admin OR if timetable status is 'PUBLISHED'.
-     * @allow (write) if user is an administrator.
-     * @principle Explicit state modeling (DRAFT/PUBLISHED) governs read access.
-     */
     match /timetables/{timetableId} {
       allow get, list: if isAdmin() || (isSignedIn() && resource.data.status == 'PUBLISHED');
       allow create: if isAdmin() && isIdConsistent(timetableId);
       allow update: if isExistingAdmin() && request.resource.data.id == resource.data.id;
       allow delete: if isExistingAdmin();
 
-      /** 
-       * @description Rules for Class Sessions nested under Timetables.
-       * @path /timetables/{timetableId}/classSessions/{sessionId}
-       * @allow (get/list) if admin OR if denormalized timetableStatus is 'PUBLISHED'.
-       * @principle Authorization Independence: Uses denormalized status to avoid parent lookups.
-       */
       match /classSessions/{sessionId} {
         allow get, list: if isAdmin() || (isSignedIn() && resource.data.timetableStatus == 'PUBLISHED');
         allow create: if isAdmin() && isIdConsistent(sessionId) && request.resource.data.timetableId == timetableId;
@@ -129,14 +78,9 @@ service cloud.firestore {
       }
     }
 
-    /**
-     * @description Placeholder for the administrative role mapping. 
-     * @path /admins/{uid}
-     * @principle RBAC source of truth.
-     */
     match /admins/{uid} {
       allow read: if isSignedIn();
-      allow write: if false; // Managed via server-side/admin SDK only.
+      allow write: if false;
     }
   }
 }
