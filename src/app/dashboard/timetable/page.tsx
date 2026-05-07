@@ -139,7 +139,6 @@ export default function TimetablePage() {
   const { data: rooms, isLoading: loadingRooms } = useCollection<Room>(roomsRef)
   const { data: sessions, isLoading: loadingSessions } = useCollection<TimetableEntry>(sessionsRef)
 
-  const [isAddOpen, setIsAddOpen] = useState(false)
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   
   const [selectedCampuses, setSelectedCampuses] = useState<string[]>([])
@@ -201,7 +200,7 @@ export default function TimetablePage() {
     <div className="flex-1 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight font-headline">Institutional Overview</h2>
+          <h2 className="text-3xl font-bold tracking-tight font-headline">Weekly Overview</h2>
           <p className="text-muted-foreground text-sm">Reviewing {filteredSessions.length} active sessions across the network.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -221,7 +220,7 @@ export default function TimetablePage() {
       <div className="flex flex-wrap items-center gap-3 bg-muted/30 p-4 rounded-xl border border-border/50">
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-primary" />
-          <span className="text-sm font-bold uppercase tracking-tight">Multi-Filters:</span>
+          <span className="text-sm font-bold uppercase tracking-tight">Filters:</span>
         </div>
         
         <MultiSelectFilter 
