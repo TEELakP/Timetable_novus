@@ -15,7 +15,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection } from "firebase/firestore"
 import { TimetableEntry, Teacher, Unit, Room, Campus, Day } from "@/lib/types"
@@ -68,13 +67,18 @@ export default function PrintPage() {
       })
     }
     
-    return data.sort((a, b) => {
-      const dayIndexA = DAYS.indexOf(a.day)
-      const dayIndexB = DAYS.indexOf(b.day)
-      if (dayIndexA !== dayIndexB) return dayIndexA - dayIndexB
-      return a.startTime.localeCompare(b.startTime)
-    })
+    return data
   }, [sessions, filterCampus, filterTeacher, filterUnit, filterType, rooms, units])
+
+  const sessionsByDay = useMemo(() => {
+    const grouped: Record<string, TimetableEntry[]> = {}
+    DAYS.forEach(day => {
+      grouped[day] = filteredSessions
+        .filter(s => s.day === day)
+        .sort((a, b) => a.startTime.localeCompare(b.startTime))
+    })
+    return grouped
+  }, [filteredSessions])
 
   const handlePrint = () => {
     window.print()
@@ -92,8 +96,8 @@ export default function PrintPage() {
     <div className="flex-1 space-y-6">
       <div className="flex items-center justify-between print:hidden">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight font-headline">Printable View</h2>
-          <p className="text-muted-foreground text-sm">Unified weekly timetable optimized for PDF and paper distribution.</p>
+          <h2 className="text-3xl font-bold tracking-tight font-headline">Weekly Grid View</h2>
+          <p className="text-muted-foreground text-sm">A compact, grid-based weekly timetable optimized for single-page printing.</p>
         </div>
         <Button onClick={handlePrint} variant="default" className="bg-primary hover:bg-primary/90">
           <Printer className="mr-2 h-4 w-4" /> Print Timetable
@@ -169,61 +173,61 @@ export default function PrintPage() {
         </div>
       </div>
 
-      <div className="bg-white p-8 rounded-lg border shadow-sm print:shadow-none print:border-none print:p-0 print:w-full">
-        <div className="mb-8 text-center border-b pb-6 print:mb-4">
-          <h1 className="text-2xl font-black uppercase tracking-tighter text-primary">Novus Academic Timetable</h1>
-          <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-widest mt-1">Weekly Institutional Schedule • Generated: {new Date().toLocaleDateString('en-AU')}</p>
+      <div className="bg-white p-4 rounded-lg border shadow-sm print:shadow-none print:border-none print:p-0 print:w-full overflow-x-auto">
+        <div className="mb-4 text-center border-b pb-4 print:mb-2">
+          <h1 className="text-xl font-black uppercase tracking-tighter text-primary">Novus Academic Weekly Timetable</h1>
+          <p className="text-muted-foreground text-[8px] uppercase font-bold tracking-widest mt-0.5">Week of {new Date().toLocaleDateString('en-AU')} • Landscape Recommended</p>
         </div>
 
-        <div className="rounded-md border overflow-hidden">
-          <Table>
-            <TableHeader className="bg-muted/50 print:bg-transparent">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[12%] font-bold text-[10px] uppercase text-primary border-r">Day</TableHead>
-                <TableHead className="w-[28%] font-bold text-[10px] uppercase text-primary border-r">Unit Name</TableHead>
-                <TableHead className="w-[25%] font-bold text-[10px] uppercase text-primary border-r">Trainer</TableHead>
-                <TableHead className="w-[15%] font-bold text-[10px] uppercase text-primary border-r">Time</TableHead>
-                <TableHead className="w-[20%] font-bold text-[10px] uppercase text-primary">Location</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredSessions.map((session, index) => {
-                const unit = units?.find(u => u.id === session.unitId)
-                const teacher = teachers?.find(t => t.id === session.teacherId)
-                const isFirstOfDay = index === 0 || filteredSessions[index - 1].day !== session.day
-                
-                return (
-                  <TableRow key={session.id} className={cn("hover:bg-transparent border-b", isFirstOfDay && "border-t-2 border-primary/20")}>
-                    <TableCell className={cn("font-black text-xs uppercase text-primary/70 border-r", !isFirstOfDay && "text-transparent")}>
-                      {session.day}
-                    </TableCell>
-                    <TableCell className="font-bold py-3 border-r">
-                      <div className="flex flex-col">
-                        <span className="text-sm">{unit?.name}</span>
-                        <span className="text-[9px] text-muted-foreground uppercase font-semibold">
-                          {unit?.type === 'theory' ? 'Classroom' : unit?.type === 'practical' ? 'Workshop' : 'Online'}
-                        </span>
+        <div className="grid grid-cols-7 border border-gray-300 min-w-[1000px]">
+          {DAYS.map(day => (
+            <div key={day} className="flex flex-col border-r border-gray-300 last:border-r-0">
+              <div className="bg-gray-100 border-b border-gray-300 py-2 text-center font-black text-xs uppercase tracking-tight">
+                {day}
+              </div>
+              <div className="flex-1 bg-gray-50/30 p-1 space-y-1 min-h-[600px]">
+                {sessionsByDay[day].map(session => {
+                  const unit = units?.find(u => u.id === session.unitId)
+                  const teacher = teachers?.find(t => t.id === session.teacherId)
+                  
+                  // Color coding based on type (matching user preference from screenshot)
+                  let bgColor = "bg-blue-100"
+                  if (unit?.type === 'practical') bgColor = "bg-orange-100"
+                  if (unit?.type === 'online') bgColor = "bg-green-100"
+                  // Optional: differentiate some subjects further
+                  if (unit?.name.includes('ELICOS')) bgColor = "bg-blue-200"
+                  if (unit?.name.includes('DCS') || unit?.name.includes('Unit 1')) bgColor = "bg-yellow-100"
+                  if (unit?.name.includes('ADCCD')) bgColor = "bg-purple-200"
+
+                  return (
+                    <div 
+                      key={session.id} 
+                      className={cn(
+                        "p-2 rounded border border-gray-400/50 shadow-sm flex flex-col items-center text-center",
+                        bgColor
+                      )}
+                    >
+                      <div className="text-[10px] font-black leading-tight mb-1">
+                        {unit?.name} {teacher?.name}
                       </div>
-                    </TableCell>
-                    <TableCell className="text-sm border-r">{teacher?.name}</TableCell>
-                    <TableCell className="text-sm font-mono font-medium border-r">{session.startTime} - {session.endTime}</TableCell>
-                    <TableCell className="text-sm">{session.room}</TableCell>
-                  </TableRow>
-                )
-              })}
-              {filteredSessions.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-24 text-center text-muted-foreground italic">
-                    No sessions match the current criteria for the week.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                      <div className="text-[9px] font-bold text-gray-700">
+                        ({session.startTime} - {session.endTime})
+                      </div>
+                    </div>
+                  )
+                })}
+                {sessionsByDay[day].length === 0 && (
+                  <div className="h-full flex items-center justify-center opacity-10">
+                    <CalendarDays className="h-12 w-12 text-gray-400" />
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
 
-        <div className="mt-8 pt-6 border-t text-[10px] text-muted-foreground flex justify-between items-center print:mt-4">
-          <p>This document is for academic use and distribution only.</p>
+        <div className="mt-4 pt-4 border-t text-[8px] text-muted-foreground flex justify-between items-center print:mt-2">
+          <p>Institutional Schedule • Confirmed Room Bookings • Confirmed Trainer Assignments</p>
           <p>Page 1 of 1</p>
         </div>
       </div>
@@ -231,8 +235,8 @@ export default function PrintPage() {
       <style jsx global>{`
         @media print {
           @page {
-            size: auto;
-            margin: 10mm;
+            size: landscape;
+            margin: 5mm;
           }
           body {
             background: white !important;
@@ -256,18 +260,23 @@ export default function PrintPage() {
             border: none !important;
             box-shadow: none !important;
           }
-          .border {
-            border-color: #e5e7eb !important;
+          .bg-white {
+            padding: 0 !important;
           }
-          table {
-            width: 100% !important;
-            border-collapse: collapse !important;
+          .min-w-[1000px] {
+            min-w: 100% !important;
           }
-          th {
-            background-color: #f3f4f6 !important;
-            color: black !important;
-            -webkit-print-color-adjust: exact;
-          }
+          /* Ensure backgrounds print */
+          .bg-gray-100 { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; }
+          .bg-blue-100 { background-color: #dbeafe !important; -webkit-print-color-adjust: exact; }
+          .bg-blue-200 { background-color: #bfdbfe !important; -webkit-print-color-adjust: exact; }
+          .bg-orange-100 { background-color: #ffedd5 !important; -webkit-print-color-adjust: exact; }
+          .bg-green-100 { background-color: #dcfce7 !important; -webkit-print-color-adjust: exact; }
+          .bg-yellow-100 { background-color: #fef9c3 !important; -webkit-print-color-adjust: exact; }
+          .bg-purple-200 { background-color: #e9d5ff !important; -webkit-print-color-adjust: exact; }
+          
+          .border { border-color: #d1d5db !important; }
+          .border-gray-300 { border-color: #d1d5db !important; }
         }
       `}</style>
     </div>
