@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { 
   Plus, 
   BookOpen, 
@@ -15,13 +15,14 @@ import {
   User,
   MapPin,
   Globe,
-  Settings2
+  Settings2,
+  CalendarPlus
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -34,7 +35,8 @@ import {
   DropdownMenuSeparator, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu"
-import { Unit, TimetableEntry, Teacher } from "@/lib/types"
+import { Unit, TimetableEntry, Teacher, Room, Day } from "@/lib/types"
+import { DAYS } from "@/lib/mock-data"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, deleteDoc } from "firebase/firestore"
 import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
@@ -49,21 +51,43 @@ export default function UnitsPage() {
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
   const sessionsRef = useMemoFirebase(() => collection(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions"), [db])
   const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
+  const roomsRef = useMemoFirebase(() => collection(db, "rooms"), [db])
 
   const { data: units, isLoading: loadingUnits } = useCollection<Unit>(unitsRef)
   const { data: sessions, isLoading: loadingSessions } = useCollection<TimetableEntry>(sessionsRef)
   const { data: teachers, isLoading: loadingTeachers } = useCollection<Teacher>(teachersRef)
+  const { data: rooms, isLoading: loadingRooms } = useCollection<Room>(roomsRef)
 
+  // Catalog Management State
   const [bulkInput, setBulkInput] = useState("")
   const [isBulkOpen, setIsBulkOpen] = useState(false)
-  
   const [isSingleOpen, setIsSingleOpen] = useState(false)
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null)
+
+  // Scheduling State
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false)
+  const [schedulingUnit, setSchedulingUnit] = useState<Unit | null>(null)
+  const [selectedTeacher, setSelectedTeacher] = useState("")
+  const [selectedRoom, setSelectedRoom] = useState("")
+  const [selectedDay, setSelectedDay] = useState<Day>("Monday")
+  const [selectedStartTime, setSelectedStartTime] = useState("09:00")
+  const [selectedEndTime, setSelectedEndTime] = useState("11:00")
+
+  // Form State for new units
   const [newUnitName, setNewUnitName] = useState("")
   const [newUnitType, setNewUnitType] = useState<'theory' | 'practical' | 'online'>('theory')
   const [newUnitDuration, setNewUnitDuration] = useState("2")
   const [newUnitSessions, setNewUnitSessions] = useState("1")
 
-  const [editingUnit, setEditingUnit] = useState<Unit | null>(null)
+  // Auto-calculate suggested end time based on unit requirements
+  useEffect(() => {
+    if (schedulingUnit && selectedStartTime) {
+      const startHour = parseInt(selectedStartTime.split(':')[0])
+      const sessionBudget = Math.ceil(schedulingUnit.durationHours / (schedulingUnit.sessionsPerWeek || 1))
+      const endHour = Math.min(startHour + sessionBudget, 23)
+      setSelectedEndTime(`${endHour.toString().padStart(2, '0')}:00`)
+    }
+  }, [schedulingUnit, selectedStartTime])
 
   const handleBulkAdd = () => {
     const lines = bulkInput.split('\n').filter(l => l.trim() !== "")
@@ -109,12 +133,35 @@ export default function UnitsPage() {
     toast({ title: "Unit Updated", description: `${editingUnit.name} has been updated.` })
   }
 
+  const handleScheduleClass = () => {
+    if (!schedulingUnit || !selectedTeacher || !selectedRoom || !selectedDay) {
+      toast({ title: "Error", description: "Missing required fields.", variant: "destructive" })
+      return
+    }
+
+    const sessionId = `session-${Date.now()}`
+    const newSession: TimetableEntry = {
+      id: sessionId,
+      unitId: schedulingUnit.id,
+      teacherId: selectedTeacher,
+      room: rooms?.find(r => r.id === selectedRoom)?.name || "Unknown",
+      day: selectedDay,
+      startTime: selectedStartTime,
+      endTime: selectedEndTime
+    }
+
+    setDocumentNonBlocking(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionId), newSession, { merge: true })
+    setIsScheduleOpen(false)
+    setSchedulingUnit(null)
+    toast({ title: "Session Scheduled", description: `${schedulingUnit.name} added to ${selectedDay}.` })
+  }
+
   const handleDelete = (id: string) => {
     deleteDoc(doc(db, "academicUnits", id))
     toast({ title: "Unit Deleted", description: "The unit has been removed." })
   }
 
-  if (loadingUnits || loadingSessions || loadingTeachers) {
+  if (loadingUnits || loadingSessions || loadingTeachers || loadingRooms) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -266,7 +313,7 @@ export default function UnitsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="font-headline">Unit Catalog</CardTitle>
-          <CardDescription>Click a unit name to view active class sessions.</CardDescription>
+          <CardDescription>Click a unit name to view active class sessions or use the action button to schedule a new one.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="rounded-md border">
@@ -347,6 +394,18 @@ export default function UnitsPage() {
                       <TableCell>{unit.sessionsPerWeek} sessions</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-8 gap-1 text-xs"
+                            onClick={() => {
+                              setSchedulingUnit(unit)
+                              setIsScheduleOpen(true)
+                            }}
+                          >
+                            <CalendarPlus className="h-3.5 w-3.5" /> Schedule
+                          </Button>
+
                           <Dialog open={!!editingUnit && editingUnit.id === unit.id} onOpenChange={(open) => !open && setEditingUnit(null)}>
                             <DialogTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingUnit(unit)}>
@@ -420,6 +479,58 @@ export default function UnitsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Quick Scheduling Dialog */}
+      <Dialog open={isScheduleOpen} onOpenChange={setIsScheduleOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Schedule Class: {schedulingUnit?.name}</DialogTitle>
+            <DialogDescription>Create a specific instance of this subject in the timetable.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>Target Day</Label>
+              <Select value={selectedDay} onValueChange={(v: any) => setSelectedDay(v)}>
+                <SelectTrigger><SelectValue placeholder="Select Day" /></SelectTrigger>
+                <SelectContent>
+                  {DAYS.map(day => <SelectItem key={day} value={day}>{day}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+               <div className="space-y-2">
+                <Label>Start Time</Label>
+                <Input type="time" value={selectedStartTime} onChange={e => setSelectedStartTime(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>End Time</Label>
+                <Input type="time" value={selectedEndTime} onChange={e => setSelectedEndTime(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Instructor</Label>
+              <Select value={selectedTeacher} onValueChange={setSelectedTeacher}>
+                <SelectTrigger><SelectValue placeholder="Select Instructor" /></SelectTrigger>
+                <SelectContent>
+                  {teachers?.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Room / Location</Label>
+              <Select value={selectedRoom} onValueChange={setSelectedRoom}>
+                <SelectTrigger><SelectValue placeholder="Select Room" /></SelectTrigger>
+                <SelectContent>
+                  {rooms?.map(r => <SelectItem key={r.id} value={r.id}>{r.name} ({r.campus})</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleScheduleClass} className="w-full">Confirm Schedule</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
