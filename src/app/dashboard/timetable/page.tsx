@@ -20,7 +20,8 @@ import {
   List,
   Database,
   BookOpen,
-  User as UserIcon
+  User as UserIcon,
+  Clock
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -531,20 +532,35 @@ export default function TimetablePage() {
                                   </p>
                                 </div>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent className="w-72">
+                              <DropdownMenuContent className="w-64">
                                 <DropdownMenuLabel className="flex items-center gap-2">
-                                  <Layers className="h-4 w-4" />
-                                  Subject Timeline
+                                  <Info className="h-4 w-4 text-primary" />
+                                  Session Details
                                 </DropdownMenuLabel>
                                 <DropdownMenuSeparator />
-                                {sessions?.filter(s => s.unitId === entry.unitId).map(s => (
-                                  <DropdownMenuItem key={s.id} className="text-xs flex flex-col items-start py-2">
-                                    <div className="font-bold">{s.day} {s.startTime}-{s.endTime}</div>
-                                    <div className="text-[10px] text-muted-foreground flex items-center gap-2 mt-0.5">
-                                      <DoorOpen className="h-3 w-3" /> {s.room} • <Users className="h-3 w-3" /> {teachers?.find(t => t.id === s.teacherId)?.name}
+                                <div className="p-3 space-y-3">
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <div className="flex flex-col">
+                                      <span className="text-[10px] uppercase font-bold text-muted-foreground">Time Slot</span>
+                                      <span className="font-semibold">{entry.startTime} - {entry.endTime}</span>
                                     </div>
-                                  </DropdownMenuItem>
-                                ))}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <DoorOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <div className="flex flex-col">
+                                      <span className="text-[10px] uppercase font-bold text-muted-foreground">Location</span>
+                                      <span className="font-semibold">{entry.room}</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <UserIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <div className="flex flex-col">
+                                      <span className="text-[10px] uppercase font-bold text-muted-foreground">Trainer</span>
+                                      <span className="font-semibold">{teacher?.name}</span>
+                                    </div>
+                                  </div>
+                                </div>
                               </DropdownMenuContent>
                             </DropdownMenu>
 
