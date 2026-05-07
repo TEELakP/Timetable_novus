@@ -24,6 +24,7 @@ import { TimetableEntry, Teacher, Unit, Room, Day } from "@/lib/types"
 import { CAMPUSES, DAYS } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 import { toJpeg } from "html-to-image"
+import { useToast } from "@/hooks/use-toast"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 
@@ -113,6 +114,7 @@ function MultiSelectFilter({
 }
 
 export default function PrintPage() {
+  const { toast } = useToast()
   const db = useFirestore()
   const timetableRef = useRef<HTMLDivElement>(null)
   const [isDownloading, setIsDownloading] = useState(false)
@@ -177,9 +179,13 @@ export default function PrintPage() {
     
     setIsDownloading(true)
     try {
+      // The SecurityError is caused by html-to-image trying to parse external CSS rules (like Google Fonts)
+      // which are blocked by CORS. Setting fontEmbedCSS to an empty string bypasses the problematic stylesheet parsing.
       const dataUrl = await toJpeg(timetableRef.current, { 
         quality: 0.95,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        fontEmbedCSS: '', // Bypass external font embedding to avoid SecurityError
+        cacheBust: true,  // Help with potential caching issues
       })
       const link = document.createElement('a')
       link.download = `Novus_Weekly_Timetable_${new Date().toISOString().split('T')[0]}.jpg`
@@ -187,6 +193,11 @@ export default function PrintPage() {
       link.click()
     } catch (err) {
       console.error('Failed to download JPG:', err)
+      toast({
+        variant: "destructive",
+        title: "Image Generation Failed",
+        description: "A security restriction or external resource prevented the image download. Please try using a different browser or printing to PDF."
+      })
     } finally {
       setIsDownloading(false)
     }
