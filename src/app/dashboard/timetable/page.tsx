@@ -18,7 +18,8 @@ import {
   Filter,
   CalendarDays,
   LayoutGrid,
-  List
+  List,
+  Database
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -28,7 +29,7 @@ import { Label } from "@/components/ui/label"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DAYS, HOURS, CAMPUSES } from "@/lib/mock-data"
+import { DAYS, HOURS, CAMPUSES, NOVUS_TRAINERS, NOVUS_UNITS, NOVUS_ROOMS } from "@/lib/mock-data"
 import { generateInitialTimetable } from "@/ai/flows/generate-initial-timetable"
 import { TimetableEntry, Teacher, Unit, Room, Day, Campus } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
@@ -59,6 +60,7 @@ export default function TimetablePage() {
 
   // Local UI State
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isSeeding, setIsSeeding] = useState(false)
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [filterCampus, setFilterCampus] = useState<Campus | "All">("All")
   const [currentDayIndex, setCurrentDayIndex] = useState(0)
@@ -97,7 +99,6 @@ export default function TimetablePage() {
       })
     }
     
-    // Sort for list view: Day order then start time
     return data.sort((a, b) => {
       const dayIndexA = DAYS.indexOf(a.day)
       const dayIndexB = DAYS.indexOf(b.day)
@@ -130,9 +131,8 @@ export default function TimetablePage() {
     }
 
     setDocumentNonBlocking(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionId), newSession, { merge: true })
-    
     setIsAddOpen(false)
-    toast({ title: "Session Added", description: `Scheduled ${unit?.name} from ${selectedStartTime} to ${selectedEndTime}.` })
+    toast({ title: "Session Added", description: `Scheduled ${unit?.name}.` })
   }
 
   const handleDeleteSession = (id: string) => {
@@ -140,9 +140,38 @@ export default function TimetablePage() {
     toast({ title: "Session Removed", description: "The scheduled session has been deleted." })
   }
 
+  const handleSeedDemoData = async () => {
+    setIsSeeding(true)
+    const batch = writeBatch(db)
+    
+    try {
+      // 1. Seed Teachers
+      NOVUS_TRAINERS.forEach(t => {
+        batch.set(doc(db, "teachers", t.id), t)
+      })
+      
+      // 2. Seed Units
+      NOVUS_UNITS.forEach(u => {
+        batch.set(doc(db, "academicUnits", u.id), u)
+      })
+      
+      // 3. Seed Rooms
+      NOVUS_ROOMS.forEach(r => {
+        batch.set(doc(db, "rooms", r.id), r)
+      })
+
+      await batch.commit()
+      toast({ title: "Demo Data Seeded", description: "All Novus faculty, units, and rooms are now in Firestore." })
+    } catch (error) {
+      toast({ title: "Seeding Failed", variant: "destructive" })
+    } finally {
+      setIsSeeding(false)
+    }
+  }
+
   const handleGenerate = async () => {
     if (!teachers?.length || !units?.length || !rooms?.length) {
-      toast({ title: "Incomplete Data", description: "Missing Teacher, Unit, or Room definitions.", variant: "destructive" })
+      toast({ title: "Incomplete Data", description: "Seed the demo data first.", variant: "destructive" })
       return
     }
 
@@ -182,8 +211,7 @@ export default function TimetablePage() {
       await batch.commit()
       toast({ title: "AI Timetable Generated", description: `Successfully scheduled ${result.timetable.length} sessions.` })
     } catch (error) {
-      console.error(error)
-      toast({ title: "Generation Failed", description: "Error running the AI scheduler.", variant: "destructive" })
+      toast({ title: "Generation Failed", variant: "destructive" })
     } finally {
       setIsGenerating(false)
     }
@@ -213,7 +241,7 @@ export default function TimetablePage() {
         if (!teacherUsage[s.teacherId]) teacherUsage[s.teacherId] = []
         if (teacherUsage[s.teacherId].includes(slotKey)) {
           const teacherName = teachers?.find(t => t.id === s.teacherId)?.name
-          const conflictMsg = `Teacher ${teacherName} is double-booked at ${s.day} ${h}:00`
+          const conflictMsg = `Teacher ${teacherName} double-booked at ${s.day} ${h}:00`
           if (!detectedConflicts.includes(conflictMsg)) detectedConflicts.push(conflictMsg)
         }
         teacherUsage[s.teacherId].push(slotKey)
@@ -269,9 +297,20 @@ export default function TimetablePage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Overview</h2>
-          <p className="text-muted-foreground">Manage and visualize your institution's weekly timetable.</p>
+          <p className="text-muted-foreground">Novus institution scheduling system.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleSeedDemoData} 
+            disabled={isSeeding}
+            className="text-primary border-primary/20 hover:bg-primary/5"
+          >
+            {isSeeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+            Seed Novus Data
+          </Button>
+
           <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)} className="mr-2">
             <TabsList className="bg-muted/50 p-1">
               <TabsTrigger value="daily" className="gap-2 h-8">
@@ -314,7 +353,7 @@ export default function TimetablePage() {
                   <Select value={selectedUnit} onValueChange={setSelectedUnit}>
                     <SelectTrigger><SelectValue placeholder="Select Subject" /></SelectTrigger>
                     <SelectContent>
-                      {units?.map(u => <SelectItem key={u.id} value={u.id}>{u.name} ({u.durationHours} hrs/wk)</SelectItem>)}
+                      {units?.map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -434,7 +473,7 @@ export default function TimetablePage() {
                       const teacher = teachers?.find(t => t.id === entry.teacherId)
                       const startHour = parseInt(entry.startTime.split(':')[0])
                       const endHourNum = parseInt(entry.endTime.split(':')[0]) || 24
-                      const duration = endHourNum - startHour
+                      const duration = Math.max(endHourNum - startHour, 0.5)
                       
                       const laneWidth = 100 / entry.colSpan
                       const leftPos = entry.colIdx * laneWidth
@@ -520,7 +559,7 @@ export default function TimetablePage() {
             <Card className="border-none shadow-xl bg-card">
               <CardHeader>
                 <CardTitle className="font-headline">Weekly Session List</CardTitle>
-                <CardDescription>Comprehensive overview of all scheduled classes for the network.</CardDescription>
+                <CardDescription>Comprehensive overview of all Novus scheduled classes.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="rounded-md border overflow-hidden">
@@ -606,7 +645,7 @@ export default function TimetablePage() {
                     <CheckCircle2 className="h-8 w-8 text-green-500" />
                   </div>
                   <p className="text-sm font-semibold">Integrity Verified</p>
-                  <p className="text-[10px] text-muted-foreground">All resources are validly allocated.</p>
+                  <p className="text-[10px] text-muted-foreground">All Novus resources are validly allocated.</p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center py-6 text-center space-y-2 text-muted-foreground opacity-50">
@@ -628,7 +667,7 @@ export default function TimetablePage() {
                   <p className="text-xl font-black">{viewMode === 'daily' ? filteredSessions.length : allFilteredSessions.length}</p>
                 </div>
                 <div className="bg-muted/50 p-3 rounded-lg">
-                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">Instructors</p>
+                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">Trainers</p>
                   <p className="text-xl font-black">
                     {new Set((viewMode === 'daily' ? filteredSessions : allFilteredSessions).map(s => s.teacherId)).size}
                   </p>
