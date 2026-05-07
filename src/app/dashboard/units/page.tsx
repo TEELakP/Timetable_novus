@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo } from "react"
@@ -11,13 +12,14 @@ import {
   AlertTriangle,
   ExternalLink,
   Clock,
-  User as UserIcon
+  DoorOpen,
+  Edit2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -34,11 +36,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Unit, Teacher, TimetableEntry } from "@/lib/types"
-import { DAYS } from "@/lib/mock-data"
+import { Unit, Teacher, TimetableEntry, Room, Campus } from "@/lib/types"
+import { DAYS, CAMPUSES } from "@/lib/mock-data"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
-import { setDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 
@@ -135,10 +137,12 @@ export default function UnitsPage() {
   
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
   const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
+  const roomsRef = useMemoFirebase(() => collection(db, "rooms"), [db])
   const sessionsRef = useMemoFirebase(() => collection(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions"), [db])
 
   const { data: units, isLoading: loadingUnits } = useCollection<Unit>(unitsRef)
   const { data: teachers } = useCollection<Teacher>(teachersRef)
+  const { data: rooms } = useCollection<Room>(roomsRef)
   const { data: sessions } = useCollection<TimetableEntry>(sessionsRef)
 
   // Filters
@@ -150,6 +154,15 @@ export default function UnitsPage() {
 
   // Detail Modal State
   const [selectedUnitForDetail, setSelectedUnitForDetail] = useState<Unit | null>(null)
+
+  // Room Creation State
+  const [isRoomDialogOpen, setIsRoomDialogOpen] = useState(false)
+  const [newRoomName, setNewRoomName] = useState("")
+  const [newRoomCampus, setNewRoomCampus] = useState<Campus>('Online')
+
+  // Session Edit State
+  const [editingSession, setEditingSession] = useState<TimetableEntry | null>(null)
+  const [newRoomForSession, setNewRoomForSession] = useState("")
 
   const filteredUnits = useMemo(() => {
     if (!units) return []
@@ -192,6 +205,28 @@ export default function UnitsPage() {
     toast({ title: "Unit Created" })
   }
 
+  const handleAddRoom = () => {
+    if (!newRoomName.trim()) return
+    const id = `r-${Date.now()}`
+    setDocumentNonBlocking(doc(db, "rooms", id), {
+      id,
+      name: newRoomName.trim(),
+      campus: newRoomCampus,
+      capacity: 30
+    }, { merge: true })
+    setNewRoomName("")
+    setIsRoomDialogOpen(false)
+    toast({ title: "Room Created", description: `${newRoomName} added to directory.` })
+  }
+
+  const handleUpdateSessionRoom = () => {
+    if (!editingSession) return
+    const sessionRef = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", editingSession.id)
+    updateDocumentNonBlocking(sessionRef, { room: newRoomForSession })
+    setEditingSession(null)
+    toast({ title: "Session Updated", description: "Classroom assignment changed." })
+  }
+
   const confirmDelete = () => {
     if (!unitToDelete) return
     const unitRef = doc(db, "academicUnits", unitToDelete)
@@ -212,9 +247,37 @@ export default function UnitsPage() {
     <div className="flex-1 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight font-headline">Academic Catalog</h2>
-        <Button onClick={() => setIsSingleOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" /> New Unit
-        </Button>
+        <div className="flex gap-2">
+           <Dialog open={isRoomDialogOpen} onOpenChange={setIsRoomDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline"><DoorOpen className="mr-2 h-4 w-4" /> Add Room</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>New Classroom</DialogTitle></DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Room Name</Label>
+                  <Input value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder="e.g. Room 301" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Campus</Label>
+                  <Select value={newRoomCampus} onValueChange={(v: Campus) => setNewRoomCampus(v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={handleAddRoom} disabled={!newRoomName.trim()}>Save Classroom</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Button onClick={() => setIsSingleOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" /> New Unit
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 bg-muted/30 p-4 rounded-xl border border-border/50">
@@ -311,8 +374,7 @@ export default function UnitsPage() {
               Confirm Deletion
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this academic unit? This will permanently remove the unit definition. 
-              Any scheduled sessions for this unit will remain but their subject details may be missing.
+              Are you sure you want to delete this academic unit? This will permanently remove the unit definition.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -326,15 +388,12 @@ export default function UnitsPage() {
 
       {/* Unit Detail Modal */}
       <Dialog open={!!selectedUnitForDetail} onOpenChange={(open) => !open && setSelectedUnitForDetail(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-2xl">
               <span className="font-black text-primary uppercase tracking-tight">{selectedUnitForDetail?.name}</span>
               <Badge variant="outline">Catalog Schedule</Badge>
             </DialogTitle>
-            <DialogDescription>
-              Showing all active class sessions for this academic unit across all sites and trainers.
-            </DialogDescription>
           </DialogHeader>
           
           <div className="py-4">
@@ -346,6 +405,7 @@ export default function UnitsPage() {
                     <TableHead>Day & Time</TableHead>
                     <TableHead>Trainer</TableHead>
                     <TableHead>Location</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -364,27 +424,63 @@ export default function UnitsPage() {
                         <TableCell>
                           <div className="flex flex-col">
                             <span className="text-sm font-semibold">{teacher?.name || 'Unassigned'}</span>
-                            <span className="text-[10px] text-muted-foreground">{teacher?.email || 'N/A'}</span>
                           </div>
                         </TableCell>
                         <TableCell className="text-xs max-w-[200px] truncate">{session.room}</TableCell>
+                        <TableCell className="text-right">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8"
+                            onClick={() => {
+                              setEditingSession(session)
+                              setNewRoomForSession(session.room)
+                            }}
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     )
                   })}
-                  {unitSessions.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
-                        No active classes currently scheduled for this unit.
-                      </TableCell>
-                    </TableRow>
-                  )}
                 </TableBody>
               </Table>
             </div>
           </div>
-          
           <DialogFooter>
             <Button variant="outline" onClick={() => setSelectedUnitForDetail(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Session Edit Dialog */}
+      <Dialog open={!!editingSession} onOpenChange={(open) => !open && setEditingSession(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Session Classroom</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Select Existing Room</Label>
+              <Select value={newRoomForSession} onValueChange={setNewRoomForSession}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {rooms?.sort((a,b) => a.name.localeCompare(b.name)).map(r => (
+                    <SelectItem key={r.id} value={r.name}>{r.name} ({r.campus})</SelectItem>
+                  ))}
+                  <SelectItem value="Other">Custom Location...</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Manual Entry</Label>
+              <Input 
+                value={newRoomForSession} 
+                onChange={e => setNewRoomForSession(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingSession(null)}>Cancel</Button>
+            <Button onClick={handleUpdateSessionRoom}>Apply Change</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
