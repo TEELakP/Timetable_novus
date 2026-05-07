@@ -16,7 +16,7 @@ import { CAMPUSES } from "@/lib/mock-data"
 import { Teacher, Campus } from "@/lib/types"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, deleteDoc } from "firebase/firestore"
-import { setDocumentNonBlocking, addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
 export default function TeachersPage() {
@@ -37,8 +37,8 @@ export default function TeachersPage() {
 
   const handleBulkAdd = () => {
     const names = bulkInput.split('\n').filter(n => n.trim() !== "")
-    names.forEach((name) => {
-      const id = `t-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    names.forEach((name, idx) => {
+      const id = `t-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`
       const teacherData: Teacher = {
         id,
         name: name.trim(),
@@ -46,7 +46,7 @@ export default function TeachersPage() {
         campuses: ['Online'],
         availability: []
       }
-      addDocumentNonBlocking(teachersRef, teacherData)
+      setDocumentNonBlocking(doc(db, "teachers", id), teacherData, { merge: true })
     })
     setBulkInput("")
     setIsBulkOpen(false)

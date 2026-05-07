@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Unit } from "@/lib/types"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, deleteDoc } from "firebase/firestore"
-import { addDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
 export default function UnitsPage() {
@@ -44,7 +44,7 @@ export default function UnitsPage() {
         durationHours: 2,
         sessionsPerWeek: 1
       }
-      addDocumentNonBlocking(unitsRef, unitData)
+      setDocumentNonBlocking(doc(db, "academicUnits", id), unitData, { merge: true })
     })
     setBulkInput("")
     setIsBulkOpen(false)
