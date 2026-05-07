@@ -2,7 +2,21 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, Search, Trash2, Edit2, Users, FileText, Loader2, Calendar as CalendarIcon, Clock, X } from "lucide-react"
+import { 
+  Plus, 
+  Search, 
+  Trash2, 
+  Edit2, 
+  Users, 
+  FileText, 
+  Loader2, 
+  Calendar as CalendarIcon, 
+  Clock, 
+  X,
+  Check,
+  Building2,
+  BookOpen
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,12 +27,14 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { CAMPUSES, DAYS } from "@/lib/mock-data"
-import { Teacher, Campus, Day } from "@/lib/types"
+import { Teacher, Campus, Day, Unit } from "@/lib/types"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, deleteDoc } from "firebase/firestore"
 import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { cn } from "@/lib/utils"
 
 export default function TeachersPage() {
   const { toast } = useToast()
@@ -27,16 +43,20 @@ export default function TeachersPage() {
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
   
   const { data: teachers, isLoading: loadingTeachers } = useCollection<Teacher>(teachersRef)
-  const { data: units } = useCollection<any>(unitsRef)
+  const { data: units } = useCollection<Unit>(unitsRef)
 
   const [bulkInput, setBulkInput] = useState("")
   const [isBulkOpen, setIsBulkOpen] = useState(false)
+  
   const [isSingleOpen, setIsSingleOpen] = useState(false)
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null)
   
+  // Single Add State
   const [newTeacherName, setNewTeacherName] = useState("")
+  const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([])
+  const [selectedCampuses, setSelectedCampuses] = useState<Campus[]>(['Online'])
 
-  // New Availability State for UI
+  // Availability State for UI
   const [newAvailDay, setNewAvailDay] = useState<Day>('Monday')
   const [newAvailStart, setNewAvailStart] = useState("09:00")
   const [newAvailEnd, setNewAvailEnd] = useState("17:00")
@@ -65,12 +85,14 @@ export default function TeachersPage() {
     const teacherData: Teacher = {
       id,
       name: newTeacherName.trim(),
-      qualifiedUnits: [],
-      campuses: ['Online'],
+      qualifiedUnits: selectedUnitIds,
+      campuses: selectedCampuses,
       availability: []
     }
     setDocumentNonBlocking(doc(db, "teachers", id), teacherData, { merge: true })
     setNewTeacherName("")
+    setSelectedUnitIds([])
+    setSelectedCampuses(['Online'])
     setIsSingleOpen(false)
     toast({ title: "Teacher Added", description: `${newTeacherName} has been created.` })
   }
@@ -160,14 +182,15 @@ export default function TeachersPage() {
           <Dialog open={isSingleOpen} onOpenChange={setIsSingleOpen}>
             <DialogTrigger asChild>
               <Button>
-                <Plus className="mr-2 h-4 w-4" /> Single Teacher
+                <Plus className="mr-2 h-4 w-4" /> New Teacher
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl">
               <DialogHeader>
-                <DialogTitle>Add New Teacher</DialogTitle>
+                <DialogTitle>Create Teacher Profile</DialogTitle>
+                <DialogDescription>Input basic details and initial connections.</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
+              <div className="space-y-6 py-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>
                   <Input 
@@ -177,171 +200,246 @@ export default function TeachersPage() {
                     onChange={(e) => setNewTeacherName(e.target.value)}
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                   <div className="space-y-3">
+                      <Label className="flex items-center gap-2">
+                        <BookOpen className="h-4 w-4 text-primary" /> Initial Units
+                      </Label>
+                      <div className="border rounded-md p-3 max-h-[150px] overflow-y-auto space-y-2 bg-muted/20">
+                         {units?.map(unit => (
+                            <div key={unit.id} className="flex items-center space-x-2">
+                               <Checkbox 
+                                  id={`new-unit-${unit.id}`}
+                                  checked={selectedUnitIds.includes(unit.id)}
+                                  onCheckedChange={(checked) => {
+                                     setSelectedUnitIds(prev => checked ? [...prev, unit.id] : prev.filter(id => id !== unit.id))
+                                  }}
+                               />
+                               <Label htmlFor={`new-unit-${unit.id}`} className="text-xs font-normal cursor-pointer">{unit.name}</Label>
+                            </div>
+                         ))}
+                      </div>
+                   </div>
+                   <div className="space-y-3">
+                      <Label className="flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-primary" /> Primary Campuses
+                      </Label>
+                      <div className="border rounded-md p-3 space-y-2 bg-muted/20">
+                         {CAMPUSES.map(campus => (
+                            <div key={campus} className="flex items-center space-x-2">
+                               <Checkbox 
+                                  id={`new-campus-${campus}`}
+                                  checked={selectedCampuses.includes(campus)}
+                                  onCheckedChange={(checked) => {
+                                     setSelectedCampuses(prev => checked ? [...prev, campus] : prev.filter(c => c !== campus))
+                                  }}
+                               />
+                               <Label htmlFor={`new-campus-${campus}`} className="text-xs font-normal cursor-pointer">{campus}</Label>
+                            </div>
+                         ))}
+                      </div>
+                   </div>
+                </div>
               </div>
               <DialogFooter>
-                <Button onClick={handleSingleAdd}>Create Teacher</Button>
+                <Button onClick={handleSingleAdd}>Save Profile</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Teachers</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{teachers?.length || 0}</div>
-          </CardContent>
-        </Card>
-      </div>
-
       <Card>
         <CardHeader>
           <CardTitle className="font-headline">Faculty Directory</CardTitle>
-          <CardDescription>Manage teacher profiles, qualifications, and availability.</CardDescription>
+          <CardDescription>Manage teacher qualifications and availability for the college network.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center py-4">
             <div className="relative w-full max-w-sm">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Filter by name..." className="pl-8" />
+              <Input placeholder="Search faculty by name..." className="pl-8" />
             </div>
           </div>
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-hidden shadow-sm">
             <Table>
-              <TableHeader>
+              <TableHeader className="bg-muted/30">
                 <TableRow>
-                  <TableHead>Name</TableHead>
+                  <TableHead>Teacher Name</TableHead>
                   <TableHead>Qualified Units</TableHead>
                   <TableHead>Campuses</TableHead>
-                  <TableHead>Availability</TableHead>
+                  <TableHead>Weekly Availability</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {teachers?.map((teacher) => (
-                  <TableRow key={teacher.id}>
-                    <TableCell className="font-medium">{teacher.name}</TableCell>
+                  <TableRow key={teacher.id} className="group">
+                    <TableCell className="font-semibold">{teacher.name}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1 max-w-[200px]">
                         {teacher.qualifiedUnits.length > 0 ? teacher.qualifiedUnits.map(unitId => {
                           const unit = units?.find(u => u.id === unitId)
                           return (
-                            <Badge key={unitId} variant="secondary" className="text-[10px]">
+                            <Badge key={unitId} variant="secondary" className="text-[10px] py-0 px-1.5 h-4">
                               {unit?.name || unitId}
                             </Badge>
                           )
-                        }) : <span className="text-xs text-muted-foreground">None assigned</span>}
+                        }) : <span className="text-[10px] text-muted-foreground italic">No units assigned</span>}
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {teacher.campuses.map(campus => (
-                          <Badge key={campus} variant="outline" className="text-[10px]">
+                          <Badge key={campus} variant="outline" className="text-[10px] py-0 px-1.5 h-4 border-primary/20 bg-primary/5 text-primary">
                             {campus}
                           </Badge>
                         ))}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col gap-0.5">
                          {teacher.availability?.length > 0 ? teacher.availability.slice(0, 2).map((slot, i) => (
-                            <span key={i} className="text-[10px] text-muted-foreground">
-                               {slot.day.substring(0, 3)} {slot.startTime}-{slot.endTime}
-                            </span>
-                         )) : <span className="text-[10px] text-muted-foreground">None set</span>}
-                         {teacher.availability?.length > 2 && <span className="text-[10px] font-bold">+{teacher.availability.length - 2} more</span>}
+                            <div key={i} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                               <Clock className="h-2.5 w-2.5" />
+                               <span>{slot.day.substring(0, 3)}: {slot.startTime}-{slot.endTime}</span>
+                            </div>
+                         )) : <span className="text-[10px] text-muted-foreground italic">Availability not set</span>}
+                         {teacher.availability?.length > 2 && <span className="text-[10px] font-bold text-primary">+{teacher.availability.length - 2} more slots</span>}
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTeacher(teacher)}>
                               <Edit2 className="h-4 w-4" />
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-                            <DialogHeader>
-                              <DialogTitle>Edit Profile: {teacher.name}</DialogTitle>
+                          <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+                            <DialogHeader className="p-6 pb-0">
+                              <DialogTitle className="text-2xl font-headline">Edit Teacher: {teacher.name}</DialogTitle>
+                              <DialogDescription>Update qualifications, campus assignments, and weekly availability.</DialogDescription>
                             </DialogHeader>
                             {editingTeacher && (
-                              <div className="grid gap-6 py-4">
-                                <div className="space-y-4">
-                                  <h4 className="text-sm font-semibold border-b pb-2">Qualified Units</h4>
-                                  <div className="grid grid-cols-2 gap-2 max-h-[150px] overflow-y-auto p-1">
-                                    {units?.map(unit => (
-                                      <div key={unit.id} className="flex items-center space-x-2">
-                                        <Checkbox 
-                                          id={`unit-${unit.id}`} 
-                                          checked={editingTeacher.qualifiedUnits.includes(unit.id)}
-                                          onCheckedChange={() => toggleUnit(editingTeacher, unit.id)}
-                                        />
-                                        <Label htmlFor={`unit-${unit.id}`} className="text-xs">{unit.name}</Label>
-                                      </div>
-                                    ))}
-                                  </div>
+                              <Tabs defaultValue="qualifications" className="flex-1 overflow-hidden flex flex-col">
+                                <div className="px-6 border-b">
+                                  <TabsList className="bg-transparent h-12 w-full justify-start gap-4">
+                                    <TabsTrigger value="qualifications" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none shadow-none h-full">Qualifications</TabsTrigger>
+                                    <TabsTrigger value="availability" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none shadow-none h-full">Availability</TabsTrigger>
+                                  </TabsList>
                                 </div>
-
-                                <div className="space-y-4">
-                                  <h4 className="text-sm font-semibold border-b pb-2">Campus Assignment</h4>
-                                  <div className="flex gap-4">
-                                    {CAMPUSES.map(campus => (
-                                      <div key={campus} className="flex items-center space-x-2">
-                                        <Checkbox 
-                                          id={`campus-${campus}`} 
-                                          checked={editingTeacher.campuses.includes(campus)}
-                                          onCheckedChange={() => toggleCampus(editingTeacher, campus)}
-                                        />
-                                        <Label htmlFor={`campus-${campus}`} className="text-xs">{campus}</Label>
+                                <div className="flex-1 overflow-y-auto p-6">
+                                  <TabsContent value="qualifications" className="m-0 space-y-8">
+                                    <div className="space-y-4">
+                                      <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                                        <BookOpen className="h-4 w-4" />
+                                        <h4>Connect Teacher to Academic Units</h4>
                                       </div>
-                                    ))}
-                                  </div>
-                                </div>
+                                      <div className="grid grid-cols-2 gap-3 border rounded-lg p-4 bg-muted/10 max-h-[300px] overflow-y-auto">
+                                        {units?.map(unit => (
+                                          <div key={unit.id} className="flex items-center space-x-2 p-2 rounded hover:bg-muted/50 transition-colors">
+                                            <Checkbox 
+                                              id={`edit-unit-${unit.id}`} 
+                                              checked={editingTeacher.qualifiedUnits.includes(unit.id)}
+                                              onCheckedChange={() => toggleUnit(editingTeacher, unit.id)}
+                                            />
+                                            <Label htmlFor={`edit-unit-${unit.id}`} className="text-xs font-medium cursor-pointer flex-1">
+                                              {unit.name} <span className="text-[10px] text-muted-foreground ml-1">({unit.type})</span>
+                                            </Label>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
 
-                                <div className="space-y-4">
-                                  <h4 className="text-sm font-semibold border-b pb-2">Availability (Days & Timeframe)</h4>
-                                  <div className="grid grid-cols-4 gap-2 items-end">
-                                    <div className="space-y-1">
-                                      <Label className="text-[10px]">Day</Label>
-                                      <Select value={newAvailDay} onValueChange={(v: Day) => setNewAvailDay(v)}>
-                                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                          {DAYS.map(day => <SelectItem key={day} value={day}>{day}</SelectItem>)}
-                                        </SelectContent>
-                                      </Select>
+                                    <div className="space-y-4">
+                                      <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                                        <Building2 className="h-4 w-4" />
+                                        <h4>Campus Assignments</h4>
+                                      </div>
+                                      <div className="flex flex-wrap gap-6 border rounded-lg p-4 bg-muted/10">
+                                        {CAMPUSES.map(campus => (
+                                          <div key={campus} className="flex items-center space-x-2">
+                                            <Checkbox 
+                                              id={`edit-campus-${campus}`} 
+                                              checked={editingTeacher.campuses.includes(campus)}
+                                              onCheckedChange={() => toggleCampus(editingTeacher, campus)}
+                                            />
+                                            <Label htmlFor={`edit-campus-${campus}`} className="text-sm font-medium cursor-pointer">{campus}</Label>
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
-                                    <div className="space-y-1">
-                                      <Label className="text-[10px]">Start</Label>
-                                      <Input type="time" className="h-8 text-xs" value={newAvailStart} onChange={e => setNewAvailStart(e.target.value)} />
-                                    </div>
-                                    <div className="space-y-1">
-                                      <Label className="text-[10px]">End</Label>
-                                      <Input type="time" className="h-8 text-xs" value={newAvailEnd} onChange={e => setNewAvailEnd(e.target.value)} />
-                                    </div>
-                                    <Button size="sm" className="h-8" onClick={addAvailability}>Add Slot</Button>
-                                  </div>
+                                  </TabsContent>
 
-                                  <div className="space-y-2">
-                                     {editingTeacher.availability?.map((slot, idx) => (
-                                        <div key={idx} className="flex items-center justify-between p-2 rounded bg-muted text-xs">
-                                           <div className="flex items-center gap-2">
-                                              <CalendarIcon className="h-3 w-3" />
-                                              <span className="font-bold">{slot.day}</span>
-                                              <Clock className="h-3 w-3 ml-2" />
-                                              <span>{slot.startTime} - {slot.endTime}</span>
-                                           </div>
-                                           <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => removeAvailability(idx)}>
-                                              <X className="h-3 w-3" />
-                                           </Button>
+                                  <TabsContent value="availability" className="m-0 space-y-6">
+                                    <div className="space-y-4">
+                                      <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                                        <CalendarIcon className="h-4 w-4" />
+                                        <h4>Recurring Weekly Time Slots</h4>
+                                      </div>
+                                      <div className="grid grid-cols-4 gap-3 items-end p-4 border rounded-lg bg-primary/5">
+                                        <div className="space-y-1.5">
+                                          <Label className="text-[10px] uppercase font-bold tracking-wider">Work Day</Label>
+                                          <Select value={newAvailDay} onValueChange={(v: Day) => setNewAvailDay(v)}>
+                                            <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                              {DAYS.map(day => <SelectItem key={day} value={day}>{day}</SelectItem>)}
+                                            </SelectContent>
+                                          </Select>
                                         </div>
-                                     ))}
-                                  </div>
+                                        <div className="space-y-1.5">
+                                          <Label className="text-[10px] uppercase font-bold tracking-wider">Start Time</Label>
+                                          <Input type="time" className="h-9 text-xs" value={newAvailStart} onChange={e => setNewAvailStart(e.target.value)} />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                          <Label className="text-[10px] uppercase font-bold tracking-wider">End Time</Label>
+                                          <Input type="time" className="h-9 text-xs" value={newAvailEnd} onChange={e => setNewAvailEnd(e.target.value)} />
+                                        </div>
+                                        <Button size="sm" className="h-9 gap-1.5" onClick={addAvailability}>
+                                          <Plus className="h-4 w-4" /> Add Slot
+                                        </Button>
+                                      </div>
+
+                                      <div className="space-y-2 mt-4">
+                                         <Label className="text-xs text-muted-foreground">Configured Availability:</Label>
+                                         {editingTeacher.availability?.length > 0 ? (
+                                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                             {editingTeacher.availability.map((slot, idx) => (
+                                                <div key={idx} className="flex items-center justify-between p-3 rounded-lg border bg-card text-xs shadow-sm group/slot">
+                                                   <div className="flex items-center gap-3">
+                                                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                                                        {slot.day.substring(0, 1)}
+                                                      </div>
+                                                      <div className="flex flex-col">
+                                                        <span className="font-bold">{slot.day}</span>
+                                                        <span className="text-muted-foreground flex items-center gap-1">
+                                                          <Clock className="h-3 w-3" /> {slot.startTime} - {slot.endTime}
+                                                        </span>
+                                                      </div>
+                                                   </div>
+                                                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover/slot:opacity-100 transition-opacity" onClick={() => removeAvailability(idx)}>
+                                                      <X className="h-4 w-4" />
+                                                   </Button>
+                                                </div>
+                                             ))}
+                                           </div>
+                                         ) : (
+                                           <div className="text-center py-8 border-2 border-dashed rounded-lg text-muted-foreground italic text-sm">
+                                              No availability slots defined for this teacher.
+                                           </div>
+                                         )}
+                                      </div>
+                                    </div>
+                                  </TabsContent>
                                 </div>
-                              </div>
+                                <div className="p-4 border-t bg-muted/20 flex justify-end">
+                                   <DialogTrigger asChild>
+                                      <Button variant="outline">Close Profile Editor</Button>
+                                   </DialogTrigger>
+                                </div>
+                              </Tabs>
                             )}
                           </DialogContent>
                         </Dialog>
