@@ -2,7 +2,7 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, BookOpen, Clock, Layers, Trash2, Edit2, FileText } from "lucide-react"
+import { Plus, BookOpen, Clock, Layers, Trash2, Edit2, FileText, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -10,26 +10,49 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { INITIAL_UNITS } from "@/lib/mock-data"
 import { Unit } from "@/lib/types"
+import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
+import { collection, doc, deleteDoc } from "firebase/firestore"
+import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { useToast } from "@/hooks/use-toast"
 
 export default function UnitsPage() {
-  const [units, setUnits] = useState<Unit[]>(INITIAL_UNITS)
+  const { toast } = useToast()
+  const db = useFirestore()
+  const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
+  const { data: units, isLoading } = useCollection<Unit>(unitsRef)
+
   const [bulkInput, setBulkInput] = useState("")
   const [isBulkOpen, setIsBulkOpen] = useState(false)
 
   const handleBulkAdd = () => {
     const lines = bulkInput.split('\n').filter(l => l.trim() !== "")
-    const newUnits: Unit[] = lines.map((name, idx) => ({
-      id: `u-bulk-${Date.now()}-${idx}`,
-      name: name.trim(),
-      type: 'theory',
-      durationHours: 2,
-      sessionsPerWeek: 1
-    }))
-    setUnits([...units, ...newUnits])
+    lines.forEach((name, idx) => {
+      const id = `u-${Date.now()}-${idx}`
+      const unitData: Unit = {
+        id,
+        name: name.trim(),
+        type: 'theory',
+        durationHours: 2,
+        sessionsPerWeek: 1
+      }
+      addDocumentNonBlocking(unitsRef, unitData)
+    })
     setBulkInput("")
     setIsBulkOpen(false)
+    toast({ title: "Bulk Add Started", description: "Adding units to the catalog..." })
+  }
+
+  const handleDelete = (id: string) => {
+    deleteDoc(doc(db, "academicUnits", id))
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
@@ -74,7 +97,7 @@ export default function UnitsPage() {
             <BookOpen className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{units.length}</div>
+            <div className="text-2xl font-bold">{units?.length || 0}</div>
           </CardContent>
         </Card>
         <Card>
@@ -84,7 +107,7 @@ export default function UnitsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {units.filter(u => u.type === 'theory').reduce((acc, u) => acc + (u.durationHours * u.sessionsPerWeek), 0)}
+              {units?.filter(u => u.type === 'theory').reduce((acc, u) => acc + (u.durationHours * u.sessionsPerWeek), 0) || 0}
             </div>
           </CardContent>
         </Card>
@@ -95,7 +118,7 @@ export default function UnitsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {units.filter(u => u.type === 'practical').reduce((acc, u) => acc + (u.durationHours * u.sessionsPerWeek), 0)}
+              {units?.filter(u => u.type === 'practical').reduce((acc, u) => acc + (u.durationHours * u.sessionsPerWeek), 0) || 0}
             </div>
           </CardContent>
         </Card>
@@ -119,7 +142,7 @@ export default function UnitsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {units.map((unit) => (
+                {units?.map((unit) => (
                   <TableRow key={unit.id}>
                     <TableCell className="font-medium">{unit.name}</TableCell>
                     <TableCell>
@@ -137,7 +160,7 @@ export default function UnitsPage() {
                         <Button variant="ghost" size="icon" className="h-8 w-8">
                           <Edit2 className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(unit.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>

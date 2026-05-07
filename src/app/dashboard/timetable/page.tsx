@@ -15,34 +15,68 @@ import {
   BookOpen,
   Plus,
   Users,
-  LayoutDashboard
+  LayoutDashboard,
+  Loader2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { DAYS, HOURS, INITIAL_TEACHERS, INITIAL_UNITS, INITIAL_RULES } from "@/lib/mock-data"
+import { DAYS, HOURS } from "@/lib/mock-data"
 import { generateInitialTimetable } from "@/ai/flows/generate-initial-timetable"
-import { TimetableEntry } from "@/lib/types"
+import { TimetableEntry, Teacher, Unit } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
+import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
+import { collection } from "firebase/firestore"
 
 export default function TimetablePage() {
+  const { toast } = useToast()
+  const db = useFirestore()
+  
+  const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
+  const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
+  const rulesRef = useMemoFirebase(() => collection(db, "schedulingRules"), [db])
+  
+  const { data: teachers, isLoading: loadingTeachers } = useCollection<Teacher>(teachersRef)
+  const { data: units, isLoading: loadingUnits } = useCollection<Unit>(unitsRef)
+  const { data: rulesData } = useCollection<any>(rulesRef)
+
   const [timetable, setTimetable] = useState<TimetableEntry[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
   const [conflicts, setConflicts] = useState<string[]>([])
-  const { toast } = useToast()
 
   const handleGenerate = async () => {
+    if (!teachers || teachers.length === 0 || !units || units.length === 0) {
+      toast({
+        title: "Missing Data",
+        description: "Please add teachers and units before generating.",
+        variant: "destructive"
+      })
+      return
+    }
+
     setIsGenerating(true)
     setConflicts([])
     try {
       const result = await generateInitialTimetable({
-        teachers: INITIAL_TEACHERS,
-        units: INITIAL_UNITS,
-        schedulingRules: INITIAL_RULES
+        teachers: teachers.map(t => ({
+          ...t,
+          availability: t.availability.map(a => ({
+             day: a.day,
+             startTime: a.startTime,
+             endTime: a.endTime
+          }))
+        })),
+        units: units.map(u => ({
+          ...u,
+          type: u.type,
+          durationHours: u.durationHours,
+          sessionsPerWeek: u.sessionsPerWeek
+        })),
+        schedulingRules: rulesData?.map((r: any) => r.name) || []
       })
       
-      const entriesWithIds = result.timetable.map((entry, idx) => ({
+      const entriesWithIds = result.timetable.map((entry: any, idx: number) => ({
         ...entry,
         id: `entry-${idx}`
       }))
@@ -75,6 +109,14 @@ export default function TimetablePage() {
 
   const getEntryForSlot = (day: string, hour: string) => {
     return timetable.find(entry => entry.day === day && entry.startTime === hour)
+  }
+
+  if (loadingTeachers || loadingUnits) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
@@ -110,7 +152,7 @@ export default function TimetablePage() {
                   <Button variant="ghost" size="icon" className="h-8 w-8">
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
-                  <h3 className="font-semibold">Spring Semester 2024 - Week 12</h3>
+                  <h3 className="font-semibold">Spring Semester 2024</h3>
                   <Button variant="ghost" size="icon" className="h-8 w-8">
                     <ChevronRight className="h-4 w-4" />
                   </Button>
@@ -143,8 +185,8 @@ export default function TimetablePage() {
                     </div>
                     {DAYS.map(day => {
                       const entry = getEntryForSlot(day, hour)
-                      const unit = INITIAL_UNITS.find(u => u.id === entry?.unitId)
-                      const teacher = INITIAL_TEACHERS.find(t => t.id === entry?.teacherId)
+                      const unit = units?.find(u => u.id === entry?.unitId)
+                      const teacher = teachers?.find(t => t.id === entry?.teacherId)
                       
                       return (
                         <div key={`${day}-${hour}`} className="h-24 border-b border-r p-1 relative group bg-background/50">

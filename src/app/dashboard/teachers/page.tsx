@@ -2,7 +2,7 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, Search, Trash2, Edit2, Users, FileText, Check } from "lucide-react"
+import { Plus, Search, Trash2, Edit2, Users, FileText, Check, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -12,27 +12,68 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { INITIAL_TEACHERS, INITIAL_UNITS, CAMPUSES } from "@/lib/mock-data"
+import { CAMPUSES } from "@/lib/mock-data"
 import { Teacher, Campus } from "@/lib/types"
+import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
+import { collection, doc, deleteDoc } from "firebase/firestore"
+import { setDocumentNonBlocking, addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { useToast } from "@/hooks/use-toast"
 
 export default function TeachersPage() {
-  const [teachers, setTeachers] = useState<Teacher[]>(INITIAL_TEACHERS)
+  const { toast } = useToast()
+  const db = useFirestore()
+  const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
+  const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
+  
+  const { data: teachers, isLoading: loadingTeachers } = useCollection<Teacher>(teachersRef)
+  const { data: units } = useCollection<any>(unitsRef)
+
   const [bulkInput, setBulkInput] = useState("")
   const [isBulkOpen, setIsBulkOpen] = useState(false)
+  const [isSingleOpen, setIsSingleOpen] = useState(false)
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null)
+  
+  const [newTeacherName, setNewTeacherName] = useState("")
 
   const handleBulkAdd = () => {
     const names = bulkInput.split('\n').filter(n => n.trim() !== "")
-    const newTeachers: Teacher[] = names.map((name, idx) => ({
-      id: `t-bulk-${Date.now()}-${idx}`,
-      name: name.trim(),
+    names.forEach((name) => {
+      const id = `t-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      const teacherData: Teacher = {
+        id,
+        name: name.trim(),
+        qualifiedUnits: [],
+        campuses: ['Online'],
+        availability: []
+      }
+      addDocumentNonBlocking(teachersRef, teacherData)
+    })
+    setBulkInput("")
+    setIsBulkOpen(false)
+    toast({ title: "Bulk Add Started", description: `Adding ${names.length} teachers...` })
+  }
+
+  const handleSingleAdd = () => {
+    if (!newTeacherName.trim()) return
+    const id = `t-${Date.now()}`
+    const teacherData: Teacher = {
+      id,
+      name: newTeacherName.trim(),
       qualifiedUnits: [],
       campuses: ['Online'],
       availability: []
-    }))
-    setTeachers([...teachers, ...newTeachers])
-    setBulkInput("")
-    setIsBulkOpen(false)
+    }
+    setDocumentNonBlocking(doc(db, "teachers", id), teacherData, { merge: true })
+    setNewTeacherName("")
+    setIsSingleOpen(false)
+    toast({ title: "Teacher Added", description: `${newTeacherName} has been created.` })
+  }
+
+  const handleDelete = (id: string) => {
+    const docRef = doc(db, "teachers", id)
+    deleteDoc(docRef).catch(() => {
+       toast({ variant: "destructive", title: "Delete Failed", description: "Could not remove teacher." })
+    })
   }
 
   const toggleUnit = (teacher: Teacher, unitId: string) => {
@@ -40,7 +81,7 @@ export default function TeachersPage() {
       ? teacher.qualifiedUnits.filter(id => id !== unitId)
       : [...teacher.qualifiedUnits, unitId]
     
-    updateTeacher({ ...teacher, qualifiedUnits })
+    setDocumentNonBlocking(doc(db, "teachers", teacher.id), { ...teacher, qualifiedUnits }, { merge: true })
   }
 
   const toggleCampus = (teacher: Teacher, campus: Campus) => {
@@ -48,14 +89,15 @@ export default function TeachersPage() {
       ? teacher.campuses.filter(c => c !== campus)
       : [...teacher.campuses, campus]
     
-    updateTeacher({ ...teacher, campuses })
+    setDocumentNonBlocking(doc(db, "teachers", teacher.id), { ...teacher, campuses }, { merge: true })
   }
 
-  const updateTeacher = (updatedTeacher: Teacher) => {
-    setTeachers(prev => prev.map(t => t.id === updatedTeacher.id ? updatedTeacher : t))
-    if (editingTeacher?.id === updatedTeacher.id) {
-      setEditingTeacher(updatedTeacher)
-    }
+  if (loadingTeachers) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
@@ -87,9 +129,33 @@ export default function TeachersPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" /> Single Teacher
-          </Button>
+
+          <Dialog open={isSingleOpen} onOpenChange={setIsSingleOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" /> Single Teacher
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add New Teacher</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input 
+                    id="name" 
+                    placeholder="e.g. Dr. Sarah Wilson" 
+                    value={newTeacherName}
+                    onChange={(e) => setNewTeacherName(e.target.value)}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={handleSingleAdd}>Create Teacher</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -100,7 +166,7 @@ export default function TeachersPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{teachers.length}</div>
+            <div className="text-2xl font-bold">{teachers?.length || 0}</div>
           </CardContent>
         </Card>
       </div>
@@ -128,13 +194,13 @@ export default function TeachersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {teachers.map((teacher) => (
+                {teachers?.map((teacher) => (
                   <TableRow key={teacher.id}>
                     <TableCell className="font-medium">{teacher.name}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1 max-w-[200px]">
                         {teacher.qualifiedUnits.length > 0 ? teacher.qualifiedUnits.map(unitId => {
-                          const unit = INITIAL_UNITS.find(u => u.id === unitId)
+                          const unit = units?.find(u => u.id === unitId)
                           return (
                             <Badge key={unitId} variant="secondary" className="text-[10px]">
                               {unit?.name || unitId}
@@ -168,8 +234,8 @@ export default function TeachersPage() {
                               <div className="grid gap-6 py-4">
                                 <div className="space-y-4">
                                   <h4 className="text-sm font-semibold">Qualified Units</h4>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    {INITIAL_UNITS.map(unit => (
+                                  <div className="grid grid-cols-2 gap-2 max-h-[200px] overflow-y-auto p-1">
+                                    {units?.map(unit => (
                                       <div key={unit.id} className="flex items-center space-x-2">
                                         <Checkbox 
                                           id={`unit-${unit.id}`} 
@@ -179,6 +245,7 @@ export default function TeachersPage() {
                                         <Label htmlFor={`unit-${unit.id}`} className="text-xs">{unit.name}</Label>
                                       </div>
                                     ))}
+                                    {(!units || units.length === 0) && <p className="text-xs text-muted-foreground">No units available. Add some in the Units page.</p>}
                                   </div>
                                 </div>
                                 <div className="space-y-4">
@@ -200,7 +267,7 @@ export default function TeachersPage() {
                             )}
                           </DialogContent>
                         </Dialog>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(teacher.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
