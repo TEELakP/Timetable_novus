@@ -18,6 +18,7 @@ import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection } from "firebase/firestore"
 import { TimetableEntry, Teacher, Unit, Room } from "@/lib/types"
 import { DAYS } from "@/lib/mock-data"
+import { cn } from "@/lib/utils"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 
