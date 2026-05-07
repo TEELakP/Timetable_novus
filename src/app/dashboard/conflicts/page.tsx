@@ -42,7 +42,7 @@ import { useToast } from "@/hooks/use-toast"
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 
 interface ConflictItem {
-  type: 'teacher' | 'room'
+  type: 'teacher' | 'room' | 'missing-resource'
   message: string
   details: string
   day: string
@@ -158,39 +158,60 @@ export default function ConflictsPage() {
     const roomUsage: Record<string, { slot: string, sessionId: string }[]> = {}
 
     activeSessions.forEach(s => {
+      // 1. Detect Missing Teacher
+      const teacher = teachers.find(t => t.id === s.teacherId)
+      const isPlaceholder = s.teacherId.toLowerCase().includes('unassigned') || 
+                          s.teacherId.toLowerCase().includes('n/a') || 
+                          s.teacherId.trim() === ''
+      
+      if (!teacher || isPlaceholder) {
+        const unit = units?.find(u => u.id === s.unitId)
+        conflicts.push({
+          type: 'missing-resource',
+          message: `Unassigned Trainer`,
+          details: `The class "${unit?.name || 'Unknown'}" has no valid trainer assigned. It will not appear in the Overview until resolved.`,
+          day: s.day,
+          time: s.startTime,
+          involvedSessionIds: [s.id],
+          unitIds: [s.unitId]
+        })
+      }
+
+      // 2. Detect Overlaps (Double Booking)
       const start = parseInt(s.startTime.split(':')[0])
       const end = parseInt(s.endTime.split(':')[0]) || 24
       
       for (let h = start; h < end; h++) {
         const slotKey = `${s.day}-${h.toString().padStart(2, '0')}:00`
         
-        if (!teacherUsage[s.teacherId]) teacherUsage[s.teacherId] = []
-        const existingTeacherSlot = teacherUsage[s.teacherId].find(u => u.slot === slotKey)
-        
-        if (existingTeacherSlot) {
-          const teacher = teachers?.find(t => t.id === s.teacherId)
-          const msg = `Teacher ${teacher?.name || 'Unknown'} is double-booked`
-          const exists = conflicts.find(c => c.message === msg && c.day === s.day && c.time === `${h}:00`)
+        if (s.teacherId && !isPlaceholder) {
+          if (!teacherUsage[s.teacherId]) teacherUsage[s.teacherId] = []
+          const existingTeacherSlot = teacherUsage[s.teacherId].find(u => u.slot === slotKey)
           
-          if (!exists) {
-            conflicts.push({
-              type: 'teacher',
-              message: msg,
-              details: `Trainer "${teacher?.name}" has multiple classes assigned at the same time.`,
-              day: s.day,
-              time: `${h}:00`,
-              involvedSessionIds: [existingTeacherSlot.sessionId, s.id],
-              teacherId: s.teacherId,
-              unitIds: [s.unitId]
-            })
-          } else {
-            if (!exists.involvedSessionIds.includes(s.id)) exists.involvedSessionIds.push(s.id)
-            if (!exists.unitIds.includes(s.unitId)) exists.unitIds.push(s.unitId)
+          if (existingTeacherSlot) {
+            const msg = `Teacher ${teacher?.name || 'Unknown'} is double-booked`
+            const exists = conflicts.find(c => c.message === msg && c.day === s.day && c.time === `${h}:00`)
+            
+            if (!exists) {
+              conflicts.push({
+                type: 'teacher',
+                message: msg,
+                details: `Trainer "${teacher?.name}" has multiple classes assigned at the same time.`,
+                day: s.day,
+                time: `${h}:00`,
+                involvedSessionIds: [existingTeacherSlot.sessionId, s.id],
+                teacherId: s.teacherId,
+                unitIds: [s.unitId]
+              })
+            } else {
+              if (!exists.involvedSessionIds.includes(s.id)) exists.involvedSessionIds.push(s.id)
+              if (!exists.unitIds.includes(s.unitId)) exists.unitIds.push(s.unitId)
+            }
           }
+          teacherUsage[s.teacherId].push({ slot: slotKey, sessionId: s.id })
         }
-        teacherUsage[s.teacherId].push({ slot: slotKey, sessionId: s.id })
 
-        if (s.room !== "Online") {
+        if (s.room && s.room !== "Online") {
           if (!roomUsage[s.room]) roomUsage[s.room] = []
           const existingRoomSlot = roomUsage[s.room].find(u => u.slot === slotKey)
           
@@ -218,7 +239,7 @@ export default function ConflictsPage() {
       }
     })
     return conflicts
-  }, [sessions, teachers])
+  }, [sessions, teachers, units])
 
   const filteredConflicts = useMemo(() => {
     let data = [...rawConflicts]
@@ -251,7 +272,7 @@ export default function ConflictsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Conflict Monitor</h2>
-          <p className="text-muted-foreground text-sm">Review resource integrity and manually resolve overlapping schedules.</p>
+          <p className="text-muted-foreground text-sm">Review resource integrity and manually resolve overlapping or unassigned schedules.</p>
         </div>
       </div>
 
@@ -312,11 +333,16 @@ export default function ConflictsPage() {
                   <button 
                     key={idx} 
                     onClick={() => setSelectedConflict(conflict)}
-                    className="w-full text-left flex flex-col md:flex-row gap-4 p-4 rounded-xl border border-destructive/20 bg-destructive/5 items-start hover:bg-destructive/10 transition-colors group"
+                    className={cn(
+                      "w-full text-left flex flex-col md:flex-row gap-4 p-4 rounded-xl border items-start hover:bg-destructive/10 transition-colors group",
+                      conflict.type === 'missing-resource' ? "border-orange-200 bg-orange-50" : "border-destructive/20 bg-destructive/5"
+                    )}
                   >
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-destructive">{conflict.message}</span>
+                        <span className={cn("font-bold", conflict.type === 'missing-resource' ? "text-orange-600" : "text-destructive")}>
+                          {conflict.message}
+                        </span>
                         <Badge variant="outline" className="text-[10px] uppercase font-black bg-white/50">{conflict.type}</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">{conflict.details}</p>
@@ -363,6 +389,9 @@ export default function ConflictsPage() {
       <Dialog open={!!selectedConflict} onOpenChange={(open) => !open && setSelectedConflict(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle>Conflict Detail</DialogTitle></DialogHeader>
+          <div className="py-4 text-sm text-muted-foreground">
+            {selectedConflict?.details}
+          </div>
           <DialogFooter><Button onClick={handleResolveConflict}>Acknowledge & Resolve</Button></DialogFooter>
         </DialogContent>
       </Dialog>

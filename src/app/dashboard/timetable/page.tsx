@@ -162,8 +162,16 @@ export default function TimetablePage() {
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
 
   const filteredSessions = useMemo(() => {
-    if (!sessions) return []
-    let data = [...sessions]
+    if (!sessions || !teachers) return []
+    
+    // Core filtering logic: Only show sessions with a valid, non-placeholder teacher
+    let data = sessions.filter(s => {
+      const teacher = teachers.find(t => t.id === s.teacherId)
+      const isPlaceholder = s.teacherId.toLowerCase().includes('unassigned') || 
+                          s.teacherId.toLowerCase().includes('n/a') || 
+                          s.teacherId.trim() === ''
+      return !!teacher && !isPlaceholder
+    })
     
     if (selectedCampuses.length > 0) {
       data = data.filter(s => {
@@ -187,7 +195,7 @@ export default function TimetablePage() {
       if (dayIndexA !== dayIndexB) return dayIndexA - dayIndexB
       return a.startTime.localeCompare(b.startTime)
     })
-  }, [sessions, selectedCampuses, selectedTeachers, selectedUnits, selectedTypes, selectedDays, rooms, units])
+  }, [sessions, teachers, selectedCampuses, selectedTeachers, selectedUnits, selectedTypes, selectedDays, rooms, units])
 
   const sessionsByDay = useMemo(() => {
     const grouped: Record<string, TimetableEntry[]> = {}
@@ -319,14 +327,14 @@ export default function TimetablePage() {
                             )}
                           >
                             <div className="flex flex-wrap items-center gap-x-1 mb-0.5">
-                              <span className="text-[11px] font-black tracking-tighter uppercase truncate max-w-full">
+                              <span className="text-[12px] font-black tracking-tighter uppercase truncate max-w-full">
                                 {unit?.name}
                               </span>
-                              <span className="text-[10px] font-bold opacity-80 truncate">
+                              <span className="text-[11px] font-bold opacity-80 truncate">
                                 • {teacher?.name}
                               </span>
                             </div>
-                            <div className="text-[9px] font-bold opacity-70 whitespace-nowrap flex items-center gap-1">
+                            <div className="text-[10px] font-bold opacity-70 whitespace-nowrap flex items-center gap-1">
                               <Clock className="h-2.5 w-2.5" />
                               {session.startTime}-{session.endTime}
                             </div>
