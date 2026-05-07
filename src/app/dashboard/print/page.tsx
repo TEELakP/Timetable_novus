@@ -179,13 +179,11 @@ export default function PrintPage() {
     
     setIsDownloading(true)
     try {
-      // The SecurityError is caused by html-to-image trying to parse external CSS rules (like Google Fonts)
-      // which are blocked by CORS. Setting fontEmbedCSS to an empty string bypasses the problematic stylesheet parsing.
       const dataUrl = await toJpeg(timetableRef.current, { 
         quality: 0.95,
         backgroundColor: '#ffffff',
-        fontEmbedCSS: '', // Bypass external font embedding to avoid SecurityError
-        cacheBust: true,  // Help with potential caching issues
+        fontEmbedCSS: '', 
+        cacheBust: true,
       })
       const link = document.createElement('a')
       link.download = `Novus_Weekly_Timetable_${new Date().toISOString().split('T')[0]}.jpg`
@@ -295,7 +293,7 @@ export default function PrintPage() {
                 <div className="bg-gray-100 border-b border-gray-300 py-2 text-center font-black text-xs uppercase tracking-tight">
                   {day}
                 </div>
-                <div className="flex-1 bg-gray-50/30 p-2 space-y-2 min-h-[600px]">
+                <div className="flex-1 bg-gray-50/30 p-1.5 space-y-1 min-h-[600px]">
                   {sessionsByDay[day].map(session => {
                     const unit = units?.find(u => u.id === session.unitId)
                     const teacher = teachers?.find(t => t.id === session.teacherId)
@@ -311,18 +309,18 @@ export default function PrintPage() {
                       <div 
                         key={session.id} 
                         className={cn(
-                          "p-2 rounded border border-gray-400/50 shadow-sm flex flex-col items-center text-center",
+                          "p-1.5 rounded border border-gray-400/50 shadow-sm flex flex-col items-center text-center leading-tight",
                           bgColor
                         )}
                       >
-                        <div className="text-[10px] font-black leading-tight mb-1 text-gray-900">
+                        <div className="text-[11px] font-black tracking-tight text-gray-900 line-clamp-2">
                           {unit?.name}
                         </div>
-                        <div className="text-[9px] font-bold text-gray-800">
+                        <div className="text-[10px] font-bold text-gray-800 mt-0.5">
                           {teacher?.name}
                         </div>
-                        <div className="text-[8px] font-bold text-gray-600 mt-1">
-                          ({session.startTime} - {session.endTime})
+                        <div className="text-[9px] font-semibold text-gray-600 mt-0.5 whitespace-nowrap">
+                          {session.startTime} - {session.endTime}
                         </div>
                       </div>
                     )
