@@ -1,3 +1,4 @@
+
 import { Teacher, Unit, Day, Campus, Room, TimetableEntry } from './types';
 
 export const CAMPUSES: Campus[] = ['Ultimo', 'Gosford', 'Perth', 'Online'];
@@ -6,29 +7,29 @@ export const DAYS: Day[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frida
 export const HOURS = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
 
 export const NOVUS_TRAINERS: Teacher[] = [
-  { id: 't-asim', name: 'Asim', qualifiedUnits: ['u-adccd-b2'], campuses: ['Perth'], availability: [] },
-  { id: 't-bharath', name: 'Bharath', qualifiedUnits: ['u-dbc', 'u-adccd-b1', 'u-adccd-b2-b3'], campuses: ['Ultimo', 'Online'], availability: [] },
-  { id: 't-george', name: 'George', qualifiedUnits: ['u-c3aet-b2'], campuses: ['Ultimo'], availability: [] },
-  { id: 't-ghanshyam', name: 'Ghanshyam', qualifiedUnits: ['u-c3aet-b1', 'u-c3lvmt-b1', 'u-c4b', 'u-dam', 'u-dob', 'u-gdm', 'u-adb'], campuses: ['Ultimo', 'Perth', 'Gosford', 'Online'], availability: [] },
-  { id: 't-harry', name: 'Harry', qualifiedUnits: ['u-c3bb-b1', 'u-c3pd-b1', 'u-c3wft', 'u-dbc'], campuses: ['Ultimo', 'Online'], availability: [] },
-  { id: 't-issa', name: 'Issa', qualifiedUnits: ['u-c3lvmt-b1'], campuses: ['Ultimo'], availability: [] },
-  { id: 't-jessy', name: 'Jessy', qualifiedUnits: ['u-adhm', 'u-c4km-b2', 'u-dhm'], campuses: ['Gosford', 'Ultimo'], availability: [] },
-  { id: 't-kabir', name: 'Kabir', qualifiedUnits: ['u-c4km-b2'], campuses: ['Ultimo'], availability: [] },
-  { id: 't-krunal', name: 'Krunal', qualifiedUnits: ['u-c3aet-b1', 'u-c3lvmt-b2', 'u-dam'], campuses: ['Ultimo'], availability: [] },
-  { id: 't-kylie', name: 'Kylie', qualifiedUnits: ['u-elicos-b1'], campuses: ['Ultimo'], availability: [] },
-  { id: 't-lakshmee', name: 'Lakshmee', qualifiedUnits: ['u-elicos-b2'], campuses: ['Ultimo'], availability: [] },
-  { id: 't-madan', name: 'Madan', qualifiedUnits: ['u-adhm', 'u-adhm-ct', 'u-dhm'], campuses: ['Gosford', 'Ultimo', 'Perth', 'Online'], availability: [] },
-  { id: 't-maxine', name: 'Maxine', qualifiedUnits: ['u-adcsm', 'u-adcsm-a', 'u-adcsm-b', 'u-adcsm-ict', 'u-dcs'], campuses: ['Perth', 'Gosford', 'Ultimo', 'Online'], availability: [] },
-  { id: 't-meena', name: 'Meena', qualifiedUnits: ['u-adcsm'], campuses: ['Perth'], availability: [] },
-  { id: 't-praveen', name: 'Praveen', qualifiedUnits: ['u-c4km-b1'], campuses: ['Ultimo'], availability: [] },
-  { id: 't-rebecca', name: 'Rebecca', qualifiedUnits: ['u-dcs'], campuses: ['Ultimo'], availability: [] },
-  { id: 't-raihan', name: 'Raihan', qualifiedUnits: ['u-adhm', 'u-adhm-ct', 'u-c4km', 'u-dhm', 'u-gdm'], campuses: ['Perth'], availability: [] },
-  { id: 't-sagar', name: 'Sagar', qualifiedUnits: ['u-c4km-b1', 'u-c4km-b2', 'u-c4km', 'u-dhm', 'u-adhm', 'u-gdm'], campuses: ['Ultimo', 'Gosford', 'Perth', 'Online'], availability: [] },
-  { id: 't-sajal', name: 'Dr. Sajal', qualifiedUnits: ['u-adcsm-b'], campuses: ['Ultimo'], availability: [] },
-  { id: 't-sullaiman', name: 'Sullaiman', qualifiedUnits: ['u-c3bb-b1', 'u-c3bb-b2', 'u-c3wft'], campuses: ['Ultimo'], availability: [] },
-  { id: 't-sushil', name: 'Sushil', qualifiedUnits: ['u-adb', 'u-dob', 'u-gdm'], campuses: ['Ultimo', 'Gosford'], availability: [] },
-  { id: 't-taran', name: 'Taran', qualifiedUnits: ['u-adcsm', 'u-dcs'], campuses: ['Gosford'], availability: [] },
-  { id: 't-vikesh', name: 'Vikesh', qualifiedUnits: ['u-c3aet-b1', 'u-c3aet-b2', 'u-c3lvmt-b2'], campuses: ['Ultimo'], availability: [] }
+  { id: 't-asim', name: 'Asim', email: 'Asim@novus.edu.au', qualifiedUnits: ['u-adccd-b2'], campuses: ['Perth'], availability: [] },
+  { id: 't-bharath', name: 'Bharath', email: 'Bharath@novus.edu.au', qualifiedUnits: ['u-dbc', 'u-adccd-b1', 'u-adccd-b2-b3'], campuses: ['Ultimo', 'Online'], availability: [] },
+  { id: 't-george', name: 'George', email: 'George@novus.edu.au', qualifiedUnits: ['u-c3aet-b2'], campuses: ['Ultimo'], availability: [] },
+  { id: 't-ghanshyam', name: 'Ghanshyam', email: 'Ghanshyam@novus.edu.au', qualifiedUnits: ['u-c3aet-b1', 'u-c3lvmt-b1', 'u-c4b', 'u-dam', 'u-dob', 'u-gdm', 'u-adb'], campuses: ['Ultimo', 'Perth', 'Gosford', 'Online'], availability: [] },
+  { id: 't-harry', name: 'Harry', email: 'Harry@novus.edu.au', qualifiedUnits: ['u-c3bb-b1', 'u-c3pd-b1', 'u-c3wft', 'u-dbc'], campuses: ['Ultimo', 'Online'], availability: [] },
+  { id: 't-issa', name: 'Issa', email: 'Issakalouche@novus.edu.au', qualifiedUnits: ['u-c3lvmt-b1'], campuses: ['Ultimo'], availability: [] },
+  { id: 't-jessy', name: 'Jessy', email: 'Jessy@novus.edu.au', qualifiedUnits: ['u-adhm', 'u-c4km-b2', 'u-dhm'], campuses: ['Gosford', 'Ultimo'], availability: [] },
+  { id: 't-kabir', name: 'Kabir', email: 'Kabir@novus.edu.au', qualifiedUnits: ['u-c4km-b2'], campuses: ['Ultimo'], availability: [] },
+  { id: 't-krunal', name: 'Krunal', email: 'Krunal@novus.edu.au', qualifiedUnits: ['u-c3aet-b1', 'u-c3lvmt-b2', 'u-dam'], campuses: ['Ultimo'], availability: [] },
+  { id: 't-kylie', name: 'Kylie', email: 'Kylie@novus.edu.au', qualifiedUnits: ['u-elicos-b1'], campuses: ['Ultimo'], availability: [] },
+  { id: 't-lakshmee', name: 'Lakshmee', email: 'Lakshmee@novus.edu.au', qualifiedUnits: ['u-elicos-b2'], campuses: ['Ultimo'], availability: [] },
+  { id: 't-madan', name: 'Madan', email: 'Madan@novus.edu.au', qualifiedUnits: ['u-adhm', 'u-adhm-ct', 'u-dhm'], campuses: ['Gosford', 'Ultimo', 'Perth', 'Online'], availability: [] },
+  { id: 't-maxine', name: 'Maxine', email: 'Maxine@novus.edu.au', qualifiedUnits: ['u-adcsm', 'u-adcsm-a', 'u-adcsm-b', 'u-adcsm-ict', 'u-dcs'], campuses: ['Perth', 'Gosford', 'Ultimo', 'Online'], availability: [] },
+  { id: 't-meena', name: 'Meena', email: 'Meena@novus.edu.au', qualifiedUnits: ['u-adcsm'], campuses: ['Perth'], availability: [] },
+  { id: 't-praveen', name: 'Praveen', email: 'Praveen@novus.edu.au', qualifiedUnits: ['u-c4km-b1'], campuses: ['Ultimo'], availability: [] },
+  { id: 't-rebecca', name: 'Rebecca', email: 'Rebecca@novus.edu.au', qualifiedUnits: ['u-dcs'], campuses: ['Ultimo'], availability: [] },
+  { id: 't-raihan', name: 'Raihan', email: 'Raihan@novus.edu.au', qualifiedUnits: ['u-adhm', 'u-adhm-ct', 'u-c4km', 'u-dhm', 'u-gdm'], campuses: ['Perth'], availability: [] },
+  { id: 't-sagar', name: 'Sagar', email: 'Sagar@novus.edu.au', qualifiedUnits: ['u-c4km-b1', 'u-c4km-b2', 'u-c4km', 'u-dhm', 'u-adhm', 'u-gdm'], campuses: ['Ultimo', 'Gosford', 'Perth', 'Online'], availability: [] },
+  { id: 't-sajal', name: 'Dr. Sajal', email: 'Sajal@novus.edu.au', qualifiedUnits: ['u-adcsm-b'], campuses: ['Ultimo'], availability: [] },
+  { id: 't-sullaiman', name: 'Sullaiman', email: 'Sullaiman@novus.edu.au', qualifiedUnits: ['u-c3bb-b1', 'u-c3bb-b2', 'u-c3wft'], campuses: ['Ultimo'], availability: [] },
+  { id: 't-sushil', name: 'Sushil', email: 'Sushil@novus.edu.au', qualifiedUnits: ['u-adb', 'u-dob', 'u-gdm'], campuses: ['Ultimo', 'Gosford'], availability: [] },
+  { id: 't-taran', name: 'Taran', email: 'Taran@novus.edu.au', qualifiedUnits: ['u-adcsm', 'u-dcs'], campuses: ['Gosford'], availability: [] },
+  { id: 't-vikesh', name: 'Vikesh', email: 'Vikesh@novus.edu.au', qualifiedUnits: ['u-c3aet-b1', 'u-c3aet-b2', 'u-c3lvmt-b2'], campuses: ['Ultimo'], availability: [] }
 ];
 
 export const NOVUS_UNITS: Unit[] = [
@@ -102,7 +103,7 @@ export const NOVUS_SCHEDULE_RAW: Partial<TimetableEntry>[] = [
   { unitId: 'u-c4b', teacherId: 't-ghanshyam', day: 'Monday', startTime: '14:00', endTime: '22:30', room: 'Kanchenjunga' },
   { unitId: 'u-c4b', teacherId: 't-ghanshyam', day: 'Tuesday', startTime: '16:00', endTime: '22:30', room: 'Kanchenjunga' },
   { unitId: 'u-dam', teacherId: 't-ghanshyam', day: 'Friday', startTime: '09:30', endTime: '16:00', room: 'Online' },
-  { unitId: 'u-dob', teacherId: 't-ghanshyam', day: 'Tuesday', startTime: '11:00', endTime: '17:30', room: 'Online' },
+  { unitId: 'u-dob', teacherId: 't-ghanshyam', day: 'Tuesday', startTime: '11:00', endTime: '5:30', room: 'Online' },
   { unitId: 'u-dob', teacherId: 't-ghanshyam', day: 'Friday', startTime: '16:00', endTime: '22:30', room: 'Kosciuscko' },
   { unitId: 'u-gdm', teacherId: 't-ghanshyam', day: 'Tuesday', startTime: '09:00', endTime: '15:30', room: 'Online' },
   { unitId: 'u-gdm', teacherId: 't-ghanshyam', day: 'Tuesday', startTime: '11:00', endTime: '17:30', room: 'Online' },
@@ -168,7 +169,7 @@ export const NOVUS_SCHEDULE_RAW: Partial<TimetableEntry>[] = [
   { unitId: 'u-c4km', teacherId: 't-raihan', day: 'Thursday', startTime: '09:30', endTime: '18:00', room: 'Unit 53 188 Newcastle St PERTH WA 6000' },
   { unitId: 'u-dhm', teacherId: 't-raihan', day: 'Wednesday', startTime: '09:30', endTime: '16:00', room: 'Unit 53 188 Newcastle St PERTH WA 6000' },
   { unitId: 'u-dhm', teacherId: 't-raihan', day: 'Thursday', startTime: '09:30', endTime: '18:00', room: 'Unit 53 188 Newcastle St PERTH WA 6000' },
-  { unitId: 'u-gdm', teacherId: 't-raihan', day: 'Saturday', startTime: '09:30', endTime: '16:00', room: 'Unit 53 188 Newcastle St PERTH WA 6000' },
+  { unitId: 'u-gdm', teacherId: 't-raihan', day: 'Saturday', startTime: '09:30', endTime: '14:00', room: 'Unit 53 188 Newcastle St PERTH WA 6000' },
   { unitId: 'u-gdm', teacherId: 't-raihan', day: 'Sunday', startTime: '09:30', endTime: '18:00', room: 'Unit 53 188 Newcastle St PERTH WA 6000' },
   { unitId: 'u-c4km-b1', teacherId: 't-sagar', day: 'Monday', startTime: '09:30', endTime: '16:00', room: 'Online' },
   { unitId: 'u-c4km-b1', teacherId: 't-sagar', day: 'Wednesday', startTime: '09:30', endTime: '16:00', room: 'Kilimanjaro' },

@@ -11,6 +11,7 @@ export interface TeacherAvailability {
 export interface Teacher {
   id: string;
   name: string;
+  email?: string;
   availability: TeacherAvailability[];
   qualifiedUnits: string[]; // IDs of units
   campuses: Campus[];
