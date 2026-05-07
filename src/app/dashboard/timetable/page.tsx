@@ -1,4 +1,3 @@
-
 "use client"
 
 import React, { useState } from "react"
@@ -317,9 +316,9 @@ export default function TimetablePage() {
             </CardHeader>
             <CardContent className="p-0">
               <div 
-                className="grid min-w-[800px] border-b"
+                className="grid min-w-[1000px] border-b"
                 style={{ 
-                  gridTemplateColumns: "80px repeat(5, 1fr)",
+                  gridTemplateColumns: "80px repeat(7, 1fr)",
                   gridTemplateRows: `48px repeat(${HOURS.length}, 64px)`
                 }}
               >

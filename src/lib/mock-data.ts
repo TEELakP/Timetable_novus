@@ -1,4 +1,3 @@
-
 import { Teacher, Unit, Day, Campus } from './types';
 
 export const CAMPUSES: Campus[] = ['Ultimo', 'Gosford', 'Perth', 'Online'];
@@ -41,5 +40,5 @@ export const INITIAL_RULES: string[] = [
   "Classes must be scheduled within campus-specific operating hours."
 ];
 
-export const DAYS: Day[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+export const DAYS: Day[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 export const HOURS = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);

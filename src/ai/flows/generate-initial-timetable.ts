@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview This file implements a Genkit flow for generating an initial conflict-free timetable.
@@ -13,7 +12,7 @@ import {z} from 'genkit';
 
 // Input Schemas
 const TeacherAvailabilitySlotSchema = z.object({
-  day: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']),
+  day: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']),
   startTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Invalid time format (HH:MM)'),
   endTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Invalid time format (HH:MM)'),
 }).describe('A specific time slot a teacher is available.');
@@ -45,7 +44,7 @@ export type GenerateInitialTimetableInput = z.infer<typeof GenerateInitialTimeta
 const TimetableEntrySchema = z.object({
   unitId: z.string().describe('ID of the unit scheduled for this session.'),
   teacherId: z.string().describe('ID of the teacher assigned to this unit session.'),
-  day: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']).describe('Day of the week for the session.'),
+  day: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).describe('Day of the week for the session.'),
   startTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Start time of the session in HH:MM format.'),
   endTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'End time of the session in HH:MM format.'),
   room: z.string().describe('Assigned room for the session.'),
@@ -87,7 +86,7 @@ Generate a timetable that is completely conflict-free. Ensure that:
 3.  Teachers only teach units they are qualified for.
 4.  Teachers only teach during their available times.
 5.  No teacher is scheduled for two classes simultaneously across ANY campus.
-6.  The timetable should be for a 5-day week (Monday to Friday).
+6.  The timetable should be for a 7-day week (Monday to Sunday).
 7.  Session duration must match the 'durationHours' of the unit.
 
 Output a valid JSON object matching the schema.`,

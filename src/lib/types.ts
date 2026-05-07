@@ -1,5 +1,4 @@
-
-export type Day = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday';
+export type Day = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
 export type Campus = 'Ultimo' | 'Gosford' | 'Perth' | 'Online';
 
 export interface TeacherAvailability {
