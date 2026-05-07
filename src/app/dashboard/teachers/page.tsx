@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState } from "react"
@@ -7,13 +6,10 @@ import {
   Search, 
   Trash2, 
   Edit2, 
-  Users, 
-  FileText, 
   Loader2, 
   Calendar as CalendarIcon, 
   Clock, 
   X,
-  Check,
   Building2,
   BookOpen
 } from "lucide-react"
@@ -22,7 +18,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/com
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
@@ -34,7 +30,6 @@ import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { cn } from "@/lib/utils"
 
 export default function TeachersPage() {
   const { toast } = useToast()
@@ -157,7 +152,7 @@ export default function TeachersPage() {
           <Dialog open={isBulkOpen} onOpenChange={setIsBulkOpen}>
             <DialogTrigger asChild>
               <Button variant="outline">
-                <FileText className="mr-2 h-4 w-4" /> Bulk Add Names
+                <BookOpen className="mr-2 h-4 w-4" /> Bulk Add Names
               </Button>
             </DialogTrigger>
             <DialogContent>
