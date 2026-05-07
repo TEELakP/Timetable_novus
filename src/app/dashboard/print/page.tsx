@@ -293,7 +293,7 @@ export default function PrintPage() {
                 <div className="bg-gray-100 border-b border-gray-300 py-2 text-center font-black text-xs uppercase tracking-tight">
                   {day}
                 </div>
-                <div className="flex-1 bg-gray-50/30 p-1.5 space-y-1 min-h-[600px]">
+                <div className="flex-1 bg-gray-50/30 p-1 space-y-1 min-h-[600px]">
                   {sessionsByDay[day].map(session => {
                     const unit = units?.find(u => u.id === session.unitId)
                     const teacher = teachers?.find(t => t.id === session.teacherId)
@@ -309,18 +309,20 @@ export default function PrintPage() {
                       <div 
                         key={session.id} 
                         className={cn(
-                          "p-1.5 rounded border border-gray-400/50 shadow-sm flex flex-col items-center text-center leading-tight",
+                          "p-1 rounded border border-gray-400/50 shadow-sm flex flex-col items-center text-center leading-[1.1]",
                           bgColor
                         )}
                       >
-                        <div className="text-[11px] font-black tracking-tight text-gray-900 line-clamp-2">
-                          {unit?.name}
+                        <div className="flex flex-wrap items-center justify-center gap-x-1 mb-0.5">
+                          <span className="text-[12px] font-black tracking-tighter text-gray-900">
+                            {unit?.name}
+                          </span>
+                          <span className="text-[11px] font-bold text-gray-700">
+                            {teacher?.name}
+                          </span>
                         </div>
-                        <div className="text-[10px] font-bold text-gray-800 mt-0.5">
-                          {teacher?.name}
-                        </div>
-                        <div className="text-[9px] font-semibold text-gray-600 mt-0.5 whitespace-nowrap">
-                          {session.startTime} - {session.endTime}
+                        <div className="text-[10px] font-black text-gray-600 whitespace-nowrap">
+                          {session.startTime}-{session.endTime}
                         </div>
                       </div>
                     )
