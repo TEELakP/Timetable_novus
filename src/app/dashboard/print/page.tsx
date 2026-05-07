@@ -1,28 +1,29 @@
 
 "use client"
 
-import React, { useMemo, useState } from "react"
+import React, { useMemo, useState, useRef } from "react"
 import { 
-  Printer, 
+  Image as ImageIcon, 
   Filter, 
   DoorOpen, 
   User as UserIcon, 
   BookOpen, 
   Settings2,
   Loader2,
-  CalendarDays
+  CalendarDays,
+  Download
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection } from "firebase/firestore"
-import { TimetableEntry, Teacher, Unit, Room, Campus, Day } from "@/lib/types"
+import { TimetableEntry, Teacher, Unit, Room, Day } from "@/lib/types"
 import { CAMPUSES, DAYS } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
+import { toJpeg } from "html-to-image"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 
@@ -113,6 +114,8 @@ function MultiSelectFilter({
 
 export default function PrintPage() {
   const db = useFirestore()
+  const timetableRef = useRef<HTMLDivElement>(null)
+  const [isDownloading, setIsDownloading] = useState(false)
   
   const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
@@ -169,8 +172,24 @@ export default function PrintPage() {
     return grouped
   }, [filteredSessions])
 
-  const handlePrint = () => {
-    window.print()
+  const handleDownloadJpg = async () => {
+    if (!timetableRef.current) return
+    
+    setIsDownloading(true)
+    try {
+      const dataUrl = await toJpeg(timetableRef.current, { 
+        quality: 0.95,
+        backgroundColor: '#ffffff'
+      })
+      const link = document.createElement('a')
+      link.download = `Novus_Weekly_Timetable_${new Date().toISOString().split('T')[0]}.jpg`
+      link.href = dataUrl
+      link.click()
+    } catch (err) {
+      console.error('Failed to download JPG:', err)
+    } finally {
+      setIsDownloading(false)
+    }
   }
 
   if (loadingTeachers || loadingUnits || loadingRooms || loadingSessions) {
@@ -183,20 +202,26 @@ export default function PrintPage() {
 
   return (
     <div className="flex-1 space-y-6">
-      <div className="flex items-center justify-between print:hidden">
+      <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Weekly Grid View</h2>
-          <p className="text-muted-foreground text-sm">A compact, grid-based weekly timetable optimized for single-page printing.</p>
+          <p className="text-muted-foreground text-sm">A compact, grid-based weekly timetable optimized for downloading and sharing.</p>
         </div>
-        <Button onClick={handlePrint} variant="default" className="bg-primary hover:bg-primary/90">
-          <Printer className="mr-2 h-4 w-4" /> Print Timetable
+        <Button 
+          onClick={handleDownloadJpg} 
+          variant="default" 
+          disabled={isDownloading}
+          className="bg-primary hover:bg-primary/90"
+        >
+          {isDownloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+          Download JPG
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 bg-muted/30 p-4 rounded-xl border border-border/50 print:hidden">
+      <div className="flex flex-wrap items-center gap-3 bg-muted/30 p-4 rounded-xl border border-border/50">
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-primary" />
-          <span className="text-sm font-bold uppercase tracking-tight">Print Multi-Filters:</span>
+          <span className="text-sm font-bold uppercase tracking-tight">Grid Filters:</span>
         </div>
         
         <MultiSelectFilter 
@@ -243,109 +268,70 @@ export default function PrintPage() {
         )}
       </div>
 
-      <div className="bg-white p-4 rounded-lg border shadow-sm print:shadow-none print:border-none print:p-0 print:w-full overflow-x-auto">
-        <div className="mb-4 text-center border-b pb-4 print:mb-2">
-          <h1 className="text-xl font-black uppercase tracking-tighter text-primary">Novus Academic Weekly Timetable</h1>
-          <p className="text-muted-foreground text-[8px] uppercase font-bold tracking-widest mt-0.5">Week of {new Date().toLocaleDateString('en-AU')} • Landscape Recommended</p>
-        </div>
+      <div className="overflow-x-auto p-4 bg-muted/20 rounded-lg">
+        <div 
+          ref={timetableRef}
+          className="bg-white p-6 rounded-lg border shadow-sm min-w-[1000px] text-black"
+        >
+          <div className="mb-4 text-center border-b pb-4">
+            <h1 className="text-xl font-black uppercase tracking-tighter text-primary">Novus Academic Weekly Timetable</h1>
+            <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-widest mt-0.5">Week of {new Date().toLocaleDateString('en-AU')}</p>
+          </div>
 
-        <div className="grid grid-cols-7 border border-gray-300 min-w-[1000px]">
-          {DAYS.map(day => (
-            <div key={day} className="flex flex-col border-r border-gray-300 last:border-r-0">
-              <div className="bg-gray-100 border-b border-gray-300 py-2 text-center font-black text-xs uppercase tracking-tight">
-                {day}
-              </div>
-              <div className="flex-1 bg-gray-50/30 p-1 space-y-1 min-h-[600px]">
-                {sessionsByDay[day].map(session => {
-                  const unit = units?.find(u => u.id === session.unitId)
-                  const teacher = teachers?.find(t => t.id === session.teacherId)
-                  
-                  let bgColor = "bg-blue-100"
-                  if (unit?.type === 'practical') bgColor = "bg-orange-100"
-                  if (unit?.type === 'online') bgColor = "bg-green-100"
-                  if (unit?.name.includes('ELICOS')) bgColor = "bg-blue-200"
-                  if (unit?.name.includes('DCS') || unit?.name.includes('Unit 1')) bgColor = "bg-yellow-100"
-                  if (unit?.name.includes('ADCCD')) bgColor = "bg-purple-200"
+          <div className="grid grid-cols-7 border border-gray-300">
+            {DAYS.map(day => (
+              <div key={day} className="flex flex-col border-r border-gray-300 last:border-r-0">
+                <div className="bg-gray-100 border-b border-gray-300 py-2 text-center font-black text-xs uppercase tracking-tight">
+                  {day}
+                </div>
+                <div className="flex-1 bg-gray-50/30 p-2 space-y-2 min-h-[600px]">
+                  {sessionsByDay[day].map(session => {
+                    const unit = units?.find(u => u.id === session.unitId)
+                    const teacher = teachers?.find(t => t.id === session.teacherId)
+                    
+                    let bgColor = "bg-blue-100"
+                    if (unit?.type === 'practical') bgColor = "bg-orange-100"
+                    if (unit?.type === 'online') bgColor = "bg-green-100"
+                    if (unit?.name.includes('ELICOS')) bgColor = "bg-blue-200"
+                    if (unit?.name.includes('DCS') || unit?.name.includes('Unit 1')) bgColor = "bg-yellow-100"
+                    if (unit?.name.includes('ADCCD')) bgColor = "bg-purple-200"
 
-                  return (
-                    <div 
-                      key={session.id} 
-                      className={cn(
-                        "p-2 rounded border border-gray-400/50 shadow-sm flex flex-col items-center text-center",
-                        bgColor
-                      )}
-                    >
-                      <div className="text-[10px] font-black leading-tight mb-1">
-                        {unit?.name} {teacher?.name}
+                    return (
+                      <div 
+                        key={session.id} 
+                        className={cn(
+                          "p-2 rounded border border-gray-400/50 shadow-sm flex flex-col items-center text-center",
+                          bgColor
+                        )}
+                      >
+                        <div className="text-[10px] font-black leading-tight mb-1 text-gray-900">
+                          {unit?.name}
+                        </div>
+                        <div className="text-[9px] font-bold text-gray-800">
+                          {teacher?.name}
+                        </div>
+                        <div className="text-[8px] font-bold text-gray-600 mt-1">
+                          ({session.startTime} - {session.endTime})
+                        </div>
                       </div>
-                      <div className="text-[9px] font-bold text-gray-700">
-                        ({session.startTime} - {session.endTime})
-                      </div>
+                    )
+                  })}
+                  {sessionsByDay[day].length === 0 && (
+                    <div className="h-full flex items-center justify-center opacity-10">
+                      <CalendarDays className="h-12 w-12 text-gray-400" />
                     </div>
-                  )
-                })}
-                {sessionsByDay[day].length === 0 && (
-                  <div className="h-full flex items-center justify-center opacity-10">
-                    <CalendarDays className="h-12 w-12 text-gray-400" />
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
 
-        <div className="mt-4 pt-4 border-t text-[8px] text-muted-foreground flex justify-between items-center print:mt-2">
-          <p>Institutional Schedule • Confirmed Room Bookings • Confirmed Trainer Assignments</p>
-          <p>Page 1 of 1</p>
+          <div className="mt-4 pt-4 border-t text-[10px] text-muted-foreground flex justify-between items-center">
+            <p>Institutional Schedule • Confirmed Room Bookings • Confirmed Trainer Assignments</p>
+            <p className="font-bold">Novus Education</p>
+          </div>
         </div>
       </div>
-
-      <style jsx global>{`
-        @media print {
-          @page {
-            size: landscape;
-            margin: 5mm;
-          }
-          body {
-            background: white !important;
-            padding: 0 !important;
-            margin: 0 !important;
-          }
-          header, nav, .print\\:hidden {
-            display: none !important;
-          }
-          main {
-            padding: 0 !important;
-            margin: 0 !important;
-            width: 100% !important;
-            display: block !important;
-          }
-          .flex-1 {
-            display: block !important;
-          }
-          .rounded-lg {
-            border-radius: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-          }
-          .bg-white {
-            padding: 0 !important;
-          }
-          .min-w-[1000px] {
-            min-w: 100% !important;
-          }
-          .bg-gray-100 { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; }
-          .bg-blue-100 { background-color: #dbeafe !important; -webkit-print-color-adjust: exact; }
-          .bg-blue-200 { background-color: #bfdbfe !important; -webkit-print-color-adjust: exact; }
-          .bg-orange-100 { background-color: #ffedd5 !important; -webkit-print-color-adjust: exact; }
-          .bg-green-100 { background-color: #dcfce7 !important; -webkit-print-color-adjust: exact; }
-          .bg-yellow-100 { background-color: #fef9c3 !important; -webkit-print-color-adjust: exact; }
-          .bg-purple-200 { background-color: #e9d5ff !important; -webkit-print-color-adjust: exact; }
-          
-          .border { border-color: #d1d5db !important; }
-          .border-gray-300 { border-color: #d1d5db !important; }
-        }
-      `}</style>
     </div>
   )
 }
