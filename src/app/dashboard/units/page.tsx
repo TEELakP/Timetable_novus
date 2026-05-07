@@ -5,42 +5,28 @@ import { useState, useMemo } from "react"
 import { 
   Plus, 
   BookOpen, 
-  Clock, 
-  Layers, 
   Trash2, 
-  Edit2, 
-  FileText, 
-  Loader2,
-  Calendar,
-  User,
-  MapPin,
-  Globe,
+  Loader2, 
   Settings2,
-  CalendarPlus,
-  MoreVertical,
-  AlertTriangle,
   Filter
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
-import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Unit, TimetableEntry, Teacher, Room, Day } from "@/lib/types"
-import { DAYS } from "@/lib/mock-data"
+import { Unit } from "@/lib/types"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc, deleteDoc } from "firebase/firestore"
+import { collection, doc } from "firebase/firestore"
 import { setDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
-
-const ACTIVE_TIMETABLE_ID = "default-timetable"
+import { cn } from "@/lib/utils"
 
 const DELIVERY_MODES = [
   { value: 'theory', label: 'Classroom' },
@@ -169,8 +155,10 @@ export default function UnitsPage() {
   }
 
   const handleDeleteUnit = (id: string) => {
-    deleteDoc(doc(db, "academicUnits", id))
-    toast({ title: "Unit Deleted" })
+    if (confirm("Delete this academic unit?")) {
+      deleteDocumentNonBlocking(doc(db, "academicUnits", id))
+      toast({ title: "Unit Removed" })
+    }
   }
 
   if (loadingUnits) {
@@ -254,7 +242,7 @@ export default function UnitsPage() {
                     {unit.durationHours} hrs/week • {unit.sessionsPerWeek} session(s)
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100" onClick={() => handleDeleteUnit(unit.id)}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteUnit(unit.id)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>

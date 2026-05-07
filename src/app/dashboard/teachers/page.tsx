@@ -28,8 +28,8 @@ import { Separator } from "@/components/ui/separator"
 import { CAMPUSES, DAYS } from "@/lib/mock-data"
 import { Teacher, Campus, Unit, TimetableEntry } from "@/lib/types"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc, deleteDoc } from "firebase/firestore"
-import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { collection, doc } from "firebase/firestore"
+import { setDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 
@@ -190,8 +190,8 @@ export default function TeachersPage() {
 
   const handleDelete = (id: string) => {
     if (confirm("Delete this teacher? This will not remove their scheduled classes, which may result in unassigned sessions.")) {
-      deleteDoc(doc(db, "teachers", id))
-      toast({ title: "Teacher Deleted" })
+      deleteDocumentNonBlocking(doc(db, "teachers", id))
+      toast({ title: "Teacher Removed" })
     }
   }
 
@@ -308,7 +308,7 @@ export default function TeachersPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(teacher.id)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
