@@ -1,3 +1,4 @@
+
 export type Day = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
 export type Campus = 'Ultimo' | 'Gosford' | 'Perth' | 'Online';
 
@@ -39,6 +40,7 @@ export interface TimetableEntry {
   endTime: string;
   room: string;
   isConflict?: boolean;
+  acknowledged?: boolean;
 }
 
 export interface TimetableState {
