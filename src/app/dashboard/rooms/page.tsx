@@ -10,7 +10,8 @@ import {
   Loader2, 
   Building2,
   Users,
-  FileText
+  FileText,
+  AlertTriangle
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -20,11 +21,21 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { CAMPUSES } from "@/lib/mock-data"
 import { Room, Campus } from "@/lib/types"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc, deleteDoc } from "firebase/firestore"
-import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { collection, doc } from "firebase/firestore"
+import { setDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -43,6 +54,7 @@ export default function RoomsPage() {
   const [newRoomCampus, setNewRoomCampus] = useState<Campus>('Online')
 
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
+  const [roomToDelete, setRoomToDelete] = useState<string | null>(null)
 
   const handleBulkAdd = () => {
     const names = bulkInput.split('\n').filter(n => n.trim() !== "")
@@ -85,9 +97,11 @@ export default function RoomsPage() {
     toast({ title: "Room Updated", description: `${editingRoom.name} updated.` })
   }
 
-  const handleDelete = (id: string) => {
-    deleteDoc(doc(db, "rooms", id))
-    toast({ title: "Room Deleted", description: "The room has been removed." })
+  const confirmDelete = () => {
+    if (!roomToDelete) return
+    deleteDocumentNonBlocking(doc(db, "rooms", roomToDelete))
+    setRoomToDelete(null)
+    toast({ title: "Room Deleted", description: "The room has been removed from the directory." })
   }
 
   if (isLoading) {
@@ -281,7 +295,7 @@ export default function RoomsPage() {
                             </DialogFooter>
                           </DialogContent>
                         </Dialog>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(room.id)}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setRoomToDelete(room.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -293,6 +307,28 @@ export default function RoomsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Deletion Confirmation */}
+      <AlertDialog open={!!roomToDelete} onOpenChange={(open) => !open && setRoomToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Confirm Room Deletion
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this room? This action cannot be undone. 
+              Existing sessions scheduled in this room will lose their location reference.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete Room
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

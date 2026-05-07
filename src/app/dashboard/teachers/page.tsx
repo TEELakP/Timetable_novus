@@ -13,7 +13,8 @@ import {
   DoorOpen,
   Mail,
   Clock,
-  ExternalLink
+  ExternalLink,
+  AlertTriangle
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -25,6 +26,16 @@ import { Label } from "@/components/ui/label"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { CAMPUSES, DAYS } from "@/lib/mock-data"
 import { Teacher, Campus, Unit, TimetableEntry } from "@/lib/types"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
@@ -131,6 +142,9 @@ export default function TeachersPage() {
   const [selectedDays, setSelectedDays] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState("")
 
+  // Deletion state
+  const [teacherToDelete, setTeacherToDelete] = useState<string | null>(null)
+
   // Detail Modal State
   const [selectedTeacherForDetail, setSelectedTeacherForDetail] = useState<Teacher | null>(null)
 
@@ -188,11 +202,12 @@ export default function TeachersPage() {
     toast({ title: "Teacher Added", description: `${newTeacherName} created.` })
   }
 
-  const handleDelete = (id: string) => {
-    if (confirm("Delete this teacher? This will not remove their scheduled classes, which may result in unassigned sessions.")) {
-      deleteDocumentNonBlocking(doc(db, "teachers", id))
-      toast({ title: "Teacher Removed" })
-    }
+  const confirmDelete = () => {
+    if (!teacherToDelete) return
+    const teacherRef = doc(db, "teachers", teacherToDelete)
+    deleteDocumentNonBlocking(teacherRef)
+    setTeacherToDelete(null)
+    toast({ title: "Teacher Removed", description: "The trainer profile has been deleted." })
   }
 
   if (loadingTeachers || loadingSessions) {
@@ -309,7 +324,7 @@ export default function TeachersPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(teacher.id)}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setTeacherToDelete(teacher.id)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -327,6 +342,28 @@ export default function TeachersPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Deletion Confirmation */}
+      <AlertDialog open={!!teacherToDelete} onOpenChange={(open) => !open && setTeacherToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Confirm Deletion
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you absolutely sure you want to delete this trainer? This will remove their faculty profile permanently. 
+              Scheduled sessions assigned to this trainer will remain but may appear as unassigned.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete Teacher
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Teacher Detail Modal */}
       <Dialog open={!!selectedTeacherForDetail} onOpenChange={(open) => !open && setSelectedTeacherForDetail(null)}>

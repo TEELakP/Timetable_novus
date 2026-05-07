@@ -8,7 +8,8 @@ import {
   Trash2, 
   Loader2, 
   Settings2,
-  Filter
+  Filter,
+  AlertTriangle
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
@@ -20,6 +21,16 @@ import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Unit } from "@/lib/types"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
@@ -124,6 +135,9 @@ export default function UnitsPage() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState("")
 
+  // Deletion state
+  const [unitToDelete, setUnitToDelete] = useState<string | null>(null)
+
   const filteredUnits = useMemo(() => {
     if (!units) return []
     let data = [...units]
@@ -154,11 +168,12 @@ export default function UnitsPage() {
     toast({ title: "Unit Created" })
   }
 
-  const handleDeleteUnit = (id: string) => {
-    if (confirm("Delete this academic unit?")) {
-      deleteDocumentNonBlocking(doc(db, "academicUnits", id))
-      toast({ title: "Unit Removed" })
-    }
+  const confirmDelete = () => {
+    if (!unitToDelete) return
+    const unitRef = doc(db, "academicUnits", unitToDelete)
+    deleteDocumentNonBlocking(unitRef)
+    setUnitToDelete(null)
+    toast({ title: "Unit Removed", description: "The academic unit has been deleted." })
   }
 
   if (loadingUnits) {
@@ -242,7 +257,7 @@ export default function UnitsPage() {
                     {unit.durationHours} hrs/week • {unit.sessionsPerWeek} session(s)
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteUnit(unit.id)}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setUnitToDelete(unit.id)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>
@@ -252,6 +267,28 @@ export default function UnitsPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Deletion Confirmation */}
+      <AlertDialog open={!!unitToDelete} onOpenChange={(open) => !open && setUnitToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Confirm Deletion
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this academic unit? This will permanently remove the unit definition. 
+              Any scheduled sessions for this unit will remain but their subject details may be missing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete Unit
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={isSingleOpen} onOpenChange={setIsSingleOpen}>
         <DialogContent>

@@ -15,7 +15,8 @@ import {
   BookOpen,
   User as UserIcon,
   Clock,
-  Settings2
+  Settings2,
+  AlertTriangle
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -30,6 +31,16 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { DAYS, CAMPUSES } from "@/lib/mock-data"
 import { TimetableEntry, Teacher, Unit, Room, Day } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
@@ -147,6 +158,9 @@ export default function TimetablePage() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [selectedDays, setSelectedDays] = useState<string[]>([])
 
+  // Deletion state
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
+
   const filteredSessions = useMemo(() => {
     if (!sessions) return []
     let data = [...sessions]
@@ -183,9 +197,12 @@ export default function TimetablePage() {
     return grouped
   }, [filteredSessions])
 
-  const handleDeleteSession = (id: string) => {
-    deleteDocumentNonBlocking(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", id))
-    toast({ title: "Session Removed", description: "The scheduled session has been deleted." })
+  const confirmDeleteSession = () => {
+    if (!sessionToDelete) return
+    const sessionRef = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionToDelete)
+    deleteDocumentNonBlocking(sessionRef)
+    setSessionToDelete(null)
+    toast({ title: "Session Removed", description: "The scheduled class has been deleted." })
   }
 
   if (loadingTeachers || loadingUnits || loadingRooms || loadingSessions) {
@@ -317,7 +334,7 @@ export default function TimetablePage() {
                               variant="ghost" 
                               size="icon" 
                               className="h-5 w-5 absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={() => handleDeleteSession(session.id)}
+                              onClick={() => setSessionToDelete(session.id)}
                             >
                                <Trash2 className="h-3 w-3" />
                             </Button>
@@ -376,7 +393,7 @@ export default function TimetablePage() {
                               variant="ghost" 
                               size="icon" 
                               className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100"
-                              onClick={() => handleDeleteSession(session.id)}
+                              onClick={() => setSessionToDelete(session.id)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -391,6 +408,27 @@ export default function TimetablePage() {
           </Card>
         )}
       </div>
+
+      {/* Session Deletion Confirmation */}
+      <AlertDialog open={!!sessionToDelete} onOpenChange={(open) => !open && setSessionToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Delete Session
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove this class from the schedule? This action will permanently delete this instance from the weekly timetable.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteSession} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Remove Session
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
