@@ -36,7 +36,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Unit, Teacher, TimetableEntry, Room, Campus } from "@/lib/types"
+import { Unit, Teacher, TimetableEntry, Room, Campus, Day } from "@/lib/types"
 import { DAYS, CAMPUSES } from "@/lib/mock-data"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
@@ -155,14 +155,22 @@ export default function UnitsPage() {
   // Detail Modal State
   const [selectedUnitForDetail, setSelectedUnitForDetail] = useState<Unit | null>(null)
 
+  // Session Edit/Add State
+  const [editingSession, setEditingSession] = useState<TimetableEntry | null>(null)
+  const [newRoomForSession, setNewRoomForSession] = useState("")
+  const [isAddSessionOpen, setIsAddSessionOpen] = useState(false)
+  const [newSessionData, setNewSessionData] = useState({
+    teacherId: "",
+    day: "Monday" as Day,
+    startTime: "09:00",
+    endTime: "11:00",
+    room: ""
+  })
+
   // Room Creation State
   const [isRoomDialogOpen, setIsRoomDialogOpen] = useState(false)
   const [newRoomName, setNewRoomName] = useState("")
   const [newRoomCampus, setNewRoomCampus] = useState<Campus>('Online')
-
-  // Session Edit State
-  const [editingSession, setEditingSession] = useState<TimetableEntry | null>(null)
-  const [newRoomForSession, setNewRoomForSession] = useState("")
 
   const filteredUnits = useMemo(() => {
     if (!units) return []
@@ -225,6 +233,20 @@ export default function UnitsPage() {
     updateDocumentNonBlocking(sessionRef, { room: newRoomForSession })
     setEditingSession(null)
     toast({ title: "Session Updated", description: "Classroom assignment changed." })
+  }
+
+  const handleAddSessionToUnit = () => {
+    if (!selectedUnitForDetail || !newSessionData.teacherId) return
+    const id = `s-${Date.now()}`
+    const sessionData: TimetableEntry = {
+      ...newSessionData,
+      id,
+      unitId: selectedUnitForDetail.id,
+      acknowledged: false
+    }
+    setDocumentNonBlocking(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", id), sessionData, { merge: true })
+    setIsAddSessionOpen(false)
+    toast({ title: "Session Added" })
   }
 
   const confirmDelete = () => {
@@ -390,10 +412,15 @@ export default function UnitsPage() {
       <Dialog open={!!selectedUnitForDetail} onOpenChange={(open) => !open && setSelectedUnitForDetail(null)}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-2xl">
-              <span className="font-black text-primary uppercase tracking-tight">{selectedUnitForDetail?.name}</span>
-              <Badge variant="outline">Catalog Schedule</Badge>
-            </DialogTitle>
+            <div className="flex items-center justify-between w-full pr-8">
+              <DialogTitle className="flex items-center gap-2 text-2xl">
+                <span className="font-black text-primary uppercase tracking-tight">{selectedUnitForDetail?.name}</span>
+                <Badge variant="outline">Catalog Schedule</Badge>
+              </DialogTitle>
+              <Button onClick={() => setIsAddSessionOpen(true)} size="sm">
+                <Plus className="h-4 w-4 mr-1" /> Add Session
+              </Button>
+            </div>
           </DialogHeader>
           
           <div className="py-4">
@@ -449,6 +476,64 @@ export default function UnitsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSelectedUnitForDetail(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Session Dialog for Specific Unit */}
+      <Dialog open={isAddSessionOpen} onOpenChange={setIsAddSessionOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Session for {selectedUnitForDetail?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>Trainer</Label>
+              <Select value={newSessionData.teacherId} onValueChange={(v) => setNewSessionData({...newSessionData, teacherId: v})}>
+                <SelectTrigger><SelectValue placeholder="Select Trainer" /></SelectTrigger>
+                <SelectContent>
+                  {teachers?.sort((a,b) => a.name.localeCompare(b.name)).map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Day</Label>
+                <Select value={newSessionData.day} onValueChange={(v: Day) => setNewSessionData({...newSessionData, day: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Location</Label>
+                <Select value={newSessionData.room} onValueChange={(v) => setNewSessionData({...newSessionData, room: v})}>
+                  <SelectTrigger><SelectValue placeholder="Room" /></SelectTrigger>
+                  <SelectContent>
+                    {rooms?.sort((a,b) => a.name.localeCompare(b.name)).map(r => (
+                      <SelectItem key={r.id} value={r.name}>{r.name} ({r.campus})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Start Time</Label>
+                <Input type="time" value={newSessionData.startTime} onChange={e => setNewSessionData({...newSessionData, startTime: e.target.value})} />
+              </div>
+              <div className="grid gap-2">
+                <Label>End Time</Label>
+                <Input type="time" value={newSessionData.endTime} onChange={e => setNewSessionData({...newSessionData, endTime: e.target.value})} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddSessionOpen(false)}>Cancel</Button>
+            <Button onClick={handleAddSessionToUnit}>Save Session</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

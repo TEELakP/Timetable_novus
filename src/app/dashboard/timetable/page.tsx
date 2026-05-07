@@ -158,13 +158,23 @@ export default function TimetablePage() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [selectedDays, setSelectedDays] = useState<string[]>([])
 
+  // New Session state
+  const [isAddSessionOpen, setIsAddSessionOpen] = useState(false)
+  const [newSession, setNewSession] = useState({
+    unitId: "",
+    teacherId: "",
+    day: "Monday" as Day,
+    startTime: "09:00",
+    endTime: "11:00",
+    room: ""
+  })
+
   // Deletion state
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
 
   const filteredSessions = useMemo(() => {
     if (!sessions || !teachers) return []
     
-    // Core filtering logic: Only show sessions with a valid, non-placeholder teacher
     let data = sessions.filter(s => {
       const teacher = teachers.find(t => t.id === s.teacherId)
       const isPlaceholder = s.teacherId.toLowerCase().includes('unassigned') || 
@@ -205,6 +215,19 @@ export default function TimetablePage() {
     return grouped
   }, [filteredSessions])
 
+  const handleAddSession = () => {
+    if (!newSession.unitId || !newSession.teacherId) return
+    const id = `s-${Date.now()}`
+    const sessionData: TimetableEntry = {
+      ...newSession,
+      id,
+      acknowledged: false
+    }
+    setDocumentNonBlocking(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", id), sessionData, { merge: true })
+    setIsAddSessionOpen(false)
+    toast({ title: "Session Added" })
+  }
+
   const confirmDeleteSession = () => {
     if (!sessionToDelete) return
     const sessionRef = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionToDelete)
@@ -229,6 +252,78 @@ export default function TimetablePage() {
           <p className="text-muted-foreground text-sm">Reviewing {filteredSessions.length} active sessions across the network.</p>
         </div>
         <div className="flex items-center gap-2">
+          <Dialog open={isAddSessionOpen} onOpenChange={setIsAddSessionOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-primary hover:bg-primary/90">
+                <Plus className="mr-2 h-4 w-4" /> New Session
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Add Manual Session</DialogTitle>
+                <DialogDescription>Create a single scheduled session.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label>Academic Unit</Label>
+                  <Select value={newSession.unitId} onValueChange={(v) => setNewSession({...newSession, unitId: v})}>
+                    <SelectTrigger><SelectValue placeholder="Select Subject" /></SelectTrigger>
+                    <SelectContent>
+                      {units?.sort((a,b) => a.name.localeCompare(b.name)).map(u => (
+                        <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Trainer</Label>
+                  <Select value={newSession.teacherId} onValueChange={(v) => setNewSession({...newSession, teacherId: v})}>
+                    <SelectTrigger><SelectValue placeholder="Select Trainer" /></SelectTrigger>
+                    <SelectContent>
+                      {teachers?.sort((a,b) => a.name.localeCompare(b.name)).map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Day</Label>
+                    <Select value={newSession.day} onValueChange={(v: Day) => setNewSession({...newSession, day: v})}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Location</Label>
+                    <Select value={newSession.room} onValueChange={(v) => setNewSession({...newSession, room: v})}>
+                      <SelectTrigger><SelectValue placeholder="Room" /></SelectTrigger>
+                      <SelectContent>
+                        {rooms?.sort((a,b) => a.name.localeCompare(b.name)).map(r => (
+                          <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Start Time</Label>
+                    <Input type="time" value={newSession.startTime} onChange={(e) => setNewSession({...newSession, startTime: e.target.value})} />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>End Time</Label>
+                    <Input type="time" value={newSession.endTime} onChange={(e) => setNewSession({...newSession, endTime: e.target.value})} />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={handleAddSession}>Save Session</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
             <TabsList className="bg-muted/50 p-1">
               <TabsTrigger value="grid" className="gap-2 h-8">
