@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useState, useMemo, useEffect } from "react"
+import React, { useState, useMemo, useEffect, useRef } from "react"
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -18,7 +18,9 @@ import {
   BookOpen,
   User as UserIcon,
   Clock,
-  Settings2
+  Settings2,
+  Upload,
+  Eraser
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -40,6 +42,7 @@ import { cn } from "@/lib/utils"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, writeBatch } from "firebase/firestore"
 import { deleteDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import * as XLSX from 'xlsx'
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 const ROW_HEIGHT = 64
@@ -132,6 +135,7 @@ function MultiSelectFilter({
 export default function TimetablePage() {
   const { toast } = useToast()
   const db = useFirestore()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   
   const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
@@ -145,6 +149,7 @@ export default function TimetablePage() {
 
   const [isSeeding, setIsSeeding] = useState(false)
   const [isAddOpen, setIsAddOpen] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
   
   // Multi-select state
   const [selectedCampuses, setSelectedCampuses] = useState<string[]>([])
@@ -240,6 +245,27 @@ export default function TimetablePage() {
     toast({ title: "Session Removed", description: "The scheduled session has been deleted." })
   }
 
+  const handleClearDatabase = async () => {
+    if (!confirm("This will delete ALL trainers, subjects, rooms, and sessions from the database. Are you sure?")) return
+    
+    setIsSeeding(true)
+    const batch = writeBatch(db)
+    
+    try {
+      teachers?.forEach(t => batch.delete(doc(db, "teachers", t.id)))
+      units?.forEach(u => batch.delete(doc(db, "academicUnits", u.id)))
+      rooms?.forEach(r => batch.delete(doc(db, "rooms", r.id)))
+      sessions?.forEach(s => batch.delete(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id)))
+      
+      await batch.commit()
+      toast({ title: "Database Cleared", description: "All institutional records have been removed." })
+    } catch (error) {
+      toast({ title: "Clear Failed", variant: "destructive" })
+    } finally {
+      setIsSeeding(false)
+    }
+  }
+
   const handleSeedDemoData = async () => {
     setIsSeeding(true)
     const batch = writeBatch(db)
@@ -255,12 +281,103 @@ export default function TimetablePage() {
       })
 
       await batch.commit()
-      toast({ title: "Novus Institutional Data Seeded", description: "130+ sessions mapped to the full 7-day schedule." })
+      toast({ title: "Data Seeded", description: "Institutional data has been updated." })
     } catch (error) {
       toast({ title: "Seeding Failed", variant: "destructive" })
     } finally {
       setIsSeeding(false)
     }
+  }
+
+  const parseTime = (timeStr: string) => {
+    if (!timeStr) return "09:00"
+    const clean = timeStr.trim().toUpperCase()
+    const match = clean.match(/(\d+):?(\d*)\s*(AM|PM)?/)
+    if (!match) return "09:00"
+
+    let hour = parseInt(match[1])
+    const min = match[2] ? match[2].padStart(2, '0') : "00"
+    const ampm = match[3]
+
+    if (ampm === "PM" && hour < 12) hour += 12
+    if (ampm === "AM" && hour === 12) hour = 0
+
+    return `${hour.toString().padStart(2, '0')}:${min}`
+  }
+
+  const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsImporting(true)
+    const reader = new FileReader()
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result
+        const wb = XLSX.read(bstr, { type: 'binary' })
+        const wsname = wb.SheetNames[0]
+        const ws = wb.Sheets[wsname]
+        const data = XLSX.utils.sheet_to_json(ws) as any[]
+
+        const batch = writeBatch(db)
+        const processedTeachers = new Set<string>()
+        const processedUnits = new Set<string>()
+        const processedRooms = new Set<string>()
+
+        data.forEach((row, idx) => {
+          const teacherName = row.Trainer || row.trainer || "Unassigned"
+          const teacherId = teacherName.toLowerCase().replace(/\s+/g, '-')
+          const teacherEmail = row.Email || row.email || `${teacherId}@novus.edu.au`
+          
+          const unitName = row.Class || row.class || "Unknown Subject"
+          const unitId = unitName.toLowerCase().replace(/\s+/g, '-')
+          
+          const roomName = row.Location || row.location || "Online"
+          const roomId = roomName.toLowerCase().replace(/[^a-z0-9]/g, '-')
+          const campus = (row.Campus || row.campus || "Online") as Campus
+
+          const day = (row.Day || row.day || "Monday") as Day
+          const startTime = parseTime(row.Start || row.start)
+          const endTime = parseTime(row.Finish || row.finish)
+
+          if (!processedTeachers.has(teacherId)) {
+            batch.set(doc(db, "teachers", teacherId), { id: teacherId, name: teacherName, email: teacherEmail, qualifiedUnits: [], campuses: [campus], availability: [] }, { merge: true })
+            processedTeachers.add(teacherId)
+          }
+
+          if (!processedUnits.has(unitId)) {
+            batch.set(doc(db, "academicUnits", unitId), { id: unitId, name: unitName, type: 'theory', durationHours: 4, sessionsPerWeek: 1 }, { merge: true })
+            processedUnits.add(unitId)
+          }
+
+          if (!processedRooms.has(roomId)) {
+            batch.set(doc(db, "rooms", roomId), { id: roomId, name: roomName, capacity: 30, campus }, { merge: true })
+            processedRooms.add(roomId)
+          }
+
+          const sessionId = `import-${Date.now()}-${idx}`
+          batch.set(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionId), {
+            id: sessionId,
+            unitId,
+            teacherId,
+            room: roomName,
+            day,
+            startTime,
+            endTime
+          })
+        })
+
+        await batch.commit()
+        toast({ title: "Import Successful", description: `Added ${data.length} sessions from Excel.` })
+      } catch (err) {
+        console.error(err)
+        toast({ variant: "destructive", title: "Import Failed", description: "Ensure your columns match: Campus, Location, Class, Day, Trainer, Email, Start, Finish" })
+      } finally {
+        setIsImporting(false)
+        if (fileInputRef.current) fileInputRef.current.value = ""
+      }
+    }
+    reader.readAsBinaryString(file)
   }
 
   const navigateDay = (direction: 'next' | 'prev') => {
@@ -273,23 +390,24 @@ export default function TimetablePage() {
 
   const positionedSessions = useMemo(() => {
     const sorted = [...filteredSessions].sort((a, b) => a.startTime.localeCompare(b.startTime))
-    const columns: TimetableEntry[][] = []
+    const lanes: TimetableEntry[][] = []
     
     sorted.forEach(session => {
       let placed = false
-      for (let i = 0; i < columns.length; i++) {
-        const lastInCol = columns[i][columns[i].length - 1]
-        if (session.startTime >= lastInCol.endTime) {
-          columns[i].push(session)
+      for (let i = 0; i < lanes.length; i++) {
+        const lastInLane = lanes[i][lanes[i].length - 1]
+        // Check for temporal overlap
+        if (session.startTime >= lastInLane.endTime) {
+          lanes[i].push(session)
           placed = true
           break
         }
       }
-      if (!placed) columns.push([session])
+      if (!placed) lanes.push([session])
     })
 
-    return columns.flatMap((colSessions, colIdx) => 
-      colSessions.map(session => ({ ...session, colIdx, colSpan: columns.length }))
+    return lanes.flatMap((laneSessions, laneIdx) => 
+      laneSessions.map(session => ({ ...session, laneIdx, totalLanes: lanes.length }))
     )
   }, [filteredSessions])
 
@@ -309,6 +427,36 @@ export default function TimetablePage() {
           <p className="text-muted-foreground text-sm">Managing {sessions?.length || 0} active sessions across the network.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            className="hidden" 
+            accept=".xlsx,.xls,.csv" 
+            onChange={handleExcelImport} 
+          />
+          
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isImporting}
+            className="border-dashed"
+          >
+            {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+            Import Excel
+          </Button>
+
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleClearDatabase} 
+            disabled={isSeeding}
+            className="text-destructive border-destructive/20 hover:bg-destructive/5"
+          >
+            {isSeeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eraser className="mr-2 h-4 w-4" />}
+            Clear All Data
+          </Button>
+
           <Button 
             variant="outline" 
             size="sm" 
@@ -317,7 +465,7 @@ export default function TimetablePage() {
             className="text-primary border-primary/20 hover:bg-primary/5"
           >
             {isSeeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
-            Seed Institutional Data
+            Seed Data
           </Button>
 
           <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
@@ -502,14 +650,14 @@ export default function TimetablePage() {
                       const endOffset = (endHourNum + (endMinNum / 60)) * ROW_HEIGHT
                       const durationPx = Math.max(endOffset - startOffset, ROW_HEIGHT / 2)
                       
-                      const laneWidth = 100 / entry.colSpan
-                      const leftPos = entry.colIdx * laneWidth
+                      const widthPct = 100 / entry.totalLanes
+                      const leftPct = entry.laneIdx * widthPct
 
                       return (
                         <div 
                           key={entry.id}
                           className="absolute z-10 p-1 pointer-events-auto transition-all"
-                          style={{ top: startOffset, height: durationPx, left: `${leftPos}%`, width: `${laneWidth}%` }}
+                          style={{ top: startOffset, height: durationPx, left: `${leftPct}%`, width: `${widthPct}%` }}
                         >
                           <div 
                             className={cn(
