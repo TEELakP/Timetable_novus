@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo } from "react"
@@ -9,13 +8,16 @@ import {
   Loader2, 
   Settings2,
   Filter,
-  AlertTriangle
+  AlertTriangle,
+  ExternalLink,
+  Clock,
+  User as UserIcon
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -32,12 +34,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Unit } from "@/lib/types"
+import { Unit, Teacher, TimetableEntry } from "@/lib/types"
+import { DAYS } from "@/lib/mock-data"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
 import { setDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
+
+const ACTIVE_TIMETABLE_ID = "default-timetable"
 
 const DELIVERY_MODES = [
   { value: 'theory', label: 'Classroom' },
@@ -129,7 +134,12 @@ export default function UnitsPage() {
   const db = useFirestore()
   
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
+  const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
+  const sessionsRef = useMemoFirebase(() => collection(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions"), [db])
+
   const { data: units, isLoading: loadingUnits } = useCollection<Unit>(unitsRef)
+  const { data: teachers } = useCollection<Teacher>(teachersRef)
+  const { data: sessions } = useCollection<TimetableEntry>(sessionsRef)
 
   // Filters
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
@@ -137,6 +147,9 @@ export default function UnitsPage() {
 
   // Deletion state
   const [unitToDelete, setUnitToDelete] = useState<string | null>(null)
+
+  // Detail Modal State
+  const [selectedUnitForDetail, setSelectedUnitForDetail] = useState<Unit | null>(null)
 
   const filteredUnits = useMemo(() => {
     if (!units) return []
@@ -149,6 +162,17 @@ export default function UnitsPage() {
     }
     return data.sort((a,b) => a.name.localeCompare(b.name))
   }, [units, searchQuery, selectedTypes])
+
+  const unitSessions = useMemo(() => {
+    if (!selectedUnitForDetail || !sessions) return []
+    return sessions
+      .filter(s => s.unitId === selectedUnitForDetail.id)
+      .sort((a, b) => {
+        const dayDiff = DAYS.indexOf(a.day) - DAYS.indexOf(b.day)
+        if (dayDiff !== 0) return dayDiff
+        return a.startTime.localeCompare(b.startTime)
+      })
+  }, [selectedUnitForDetail, sessions])
 
   const [isSingleOpen, setIsSingleOpen] = useState(false)
   const [newUnitName, setNewUnitName] = useState("")
@@ -243,7 +267,17 @@ export default function UnitsPage() {
             <TableBody>
               {filteredUnits.map((unit) => (
                 <TableRow key={unit.id} className="group">
-                  <TableCell className="font-bold">{unit.name}</TableCell>
+                  <TableCell>
+                    <button 
+                      onClick={() => setSelectedUnitForDetail(unit)}
+                      className="flex flex-col text-left hover:text-primary transition-colors group/btn"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold group-hover/btn:underline">{unit.name}</span>
+                        <ExternalLink className="h-3 w-3 opacity-0 group-hover/btn:opacity-100 transition-opacity" />
+                      </div>
+                    </button>
+                  </TableCell>
                   <TableCell>
                     <Badge variant="secondary" className={cn(
                       unit.type === 'theory' ? "bg-blue-100 text-blue-700" :
@@ -289,6 +323,71 @@ export default function UnitsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Unit Detail Modal */}
+      <Dialog open={!!selectedUnitForDetail} onOpenChange={(open) => !open && setSelectedUnitForDetail(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-2xl">
+              <span className="font-black text-primary uppercase tracking-tight">{selectedUnitForDetail?.name}</span>
+              <Badge variant="outline">Catalog Schedule</Badge>
+            </DialogTitle>
+            <DialogDescription>
+              Showing all active class sessions for this academic unit across all sites and trainers.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4 border-b pb-2">Active Sessions</h4>
+            <div className="max-h-[400px] overflow-y-auto rounded-md border">
+              <Table>
+                <TableHeader className="bg-muted/50 sticky top-0">
+                  <TableRow>
+                    <TableHead>Day & Time</TableHead>
+                    <TableHead>Trainer</TableHead>
+                    <TableHead>Location</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {unitSessions.map((session) => {
+                    const teacher = teachers?.find(t => t.id === session.teacherId)
+                    return (
+                      <TableRow key={session.id}>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-bold text-xs">{session.day}</span>
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                              <Clock className="h-2.5 w-2.5" /> {session.startTime} - {session.endTime}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold">{teacher?.name || 'Unassigned'}</span>
+                            <span className="text-[10px] text-muted-foreground">{teacher?.email || 'N/A'}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs max-w-[200px] truncate">{session.room}</TableCell>
+                      </TableRow>
+                    )
+                  })}
+                  {unitSessions.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
+                        No active classes currently scheduled for this unit.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedUnitForDetail(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isSingleOpen} onOpenChange={setIsSingleOpen}>
         <DialogContent>
