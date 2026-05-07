@@ -13,7 +13,6 @@ import {
   Loader2,
   Trash2,
   DoorOpen,
-  Layers,
   Filter,
   CalendarDays,
   LayoutGrid,
@@ -129,9 +128,7 @@ export default function TimetablePage() {
       return
     }
 
-    const unit = units?.find(u => u.id === selectedUnit)
     const sessionId = `session-${Date.now()}`
-    
     const newSession: TimetableEntry = {
       id: sessionId,
       unitId: selectedUnit,
@@ -144,7 +141,7 @@ export default function TimetablePage() {
 
     setDocumentNonBlocking(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionId), newSession, { merge: true })
     setIsAddOpen(false)
-    toast({ title: "Session Added", description: `Scheduled ${unit?.name}.` })
+    toast({ title: "Session Added", description: `Scheduled successfully.` })
   }
 
   const handleDeleteSession = (id: string) => {
@@ -157,28 +154,17 @@ export default function TimetablePage() {
     const batch = writeBatch(db)
     
     try {
-      NOVUS_TRAINERS.forEach(t => {
-        batch.set(doc(db, "teachers", t.id), t)
-      })
-      
-      NOVUS_UNITS.forEach(u => {
-        batch.set(doc(db, "academicUnits", u.id), u)
-      })
-      
-      NOVUS_ROOMS.forEach(r => {
-        batch.set(doc(db, "rooms", r.id), r)
-      })
+      NOVUS_TRAINERS.forEach(t => batch.set(doc(db, "teachers", t.id), t))
+      NOVUS_UNITS.forEach(u => batch.set(doc(db, "academicUnits", u.id), u))
+      NOVUS_ROOMS.forEach(r => batch.set(doc(db, "rooms", r.id), r))
 
       NOVUS_SCHEDULE_RAW.forEach((entry, idx) => {
         const id = `novus-seed-${idx}`
-        batch.set(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", id), {
-          ...entry,
-          id
-        })
+        batch.set(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", id), { ...entry, id })
       })
 
       await batch.commit()
-      toast({ title: "Novus Institutional Data Seeded", description: "All faculty, units, rooms, and session timings are now in Firestore." })
+      toast({ title: "Novus Institutional Data Seeded", description: "130+ sessions mapped to the full 7-day schedule." })
     } catch (error) {
       toast({ title: "Seeding Failed", variant: "destructive" })
     } finally {
@@ -194,9 +180,11 @@ export default function TimetablePage() {
     }
   }
 
-  // Detect logical conflicts
-  const detectedConflicts: string[] = []
-  if (sessions && teachers) {
+  // Conflict Monitoring
+  const detectedConflicts = useMemo(() => {
+    const conflicts: string[] = []
+    if (!sessions || !teachers) return conflicts
+
     const teacherUsage: Record<string, string[]> = {}
     const roomUsage: Record<string, string[]> = {}
 
@@ -210,20 +198,21 @@ export default function TimetablePage() {
         if (!teacherUsage[s.teacherId]) teacherUsage[s.teacherId] = []
         if (teacherUsage[s.teacherId].includes(slotKey)) {
           const teacherName = teachers?.find(t => t.id === s.teacherId)?.name
-          const conflictMsg = `Teacher ${teacherName} double-booked at ${s.day} ${h}:00`
-          if (!detectedConflicts.includes(conflictMsg)) detectedConflicts.push(conflictMsg)
+          const msg = `Teacher ${teacherName} double-booked at ${s.day} ${h}:00`
+          if (!conflicts.includes(msg)) conflicts.push(msg)
         }
         teacherUsage[s.teacherId].push(slotKey)
 
         if (!roomUsage[s.room]) roomUsage[s.room] = []
         if (roomUsage[s.room].includes(slotKey)) {
-          const conflictMsg = `Room ${s.room} has multiple classes at ${s.day} ${h}:00`
-          if (!detectedConflicts.includes(conflictMsg)) detectedConflicts.push(conflictMsg)
+          const msg = `Room ${s.room} busy at ${s.day} ${h}:00`
+          if (!conflicts.includes(msg)) conflicts.push(msg)
         }
         roomUsage[s.room].push(slotKey)
       }
     })
-  }
+    return conflicts
+  }, [sessions, teachers])
 
   const positionedSessions = useMemo(() => {
     const sorted = [...filteredSessions].sort((a, b) => a.startTime.localeCompare(b.startTime))
@@ -239,17 +228,11 @@ export default function TimetablePage() {
           break
         }
       }
-      if (!placed) {
-        columns.push([session])
-      }
+      if (!placed) columns.push([session])
     })
 
     return columns.flatMap((colSessions, colIdx) => 
-      colSessions.map(session => ({
-        ...session,
-        colIdx,
-        colSpan: columns.length
-      }))
+      colSessions.map(session => ({ ...session, colIdx, colSpan: columns.length }))
     )
   }, [filteredSessions])
 
@@ -265,8 +248,8 @@ export default function TimetablePage() {
     <div className="flex-1 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight font-headline">Overview</h2>
-          <p className="text-muted-foreground">Novus institution scheduling system.</p>
+          <h2 className="text-3xl font-bold tracking-tight font-headline">Institutional Overview</h2>
+          <p className="text-muted-foreground text-sm">Managing 130+ active sessions across the Novus network.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button 
@@ -283,24 +266,24 @@ export default function TimetablePage() {
           <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
             <TabsList className="bg-muted/50 p-1">
               <TabsTrigger value="daily" className="gap-2 h-8">
-                <LayoutGrid className="h-4 w-4" /> Grid
+                <LayoutGrid className="h-4 w-4" /> Daily Grid
               </TabsTrigger>
               <TabsTrigger value="weekly" className="gap-2 h-8">
-                <List className="h-4 w-4" /> List
+                <List className="h-4 w-4" /> Weekly List
               </TabsTrigger>
             </TabsList>
           </Tabs>
 
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
-              <Button variant="default" size="sm" className="bg-primary shadow-lg">
-                <Plus className="mr-2 h-4 w-4" /> Add Session
+              <Button variant="default" size="sm" className="bg-primary">
+                <Plus className="mr-2 h-4 w-4" /> Add Match
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>Match Session for {currentDay}</DialogTitle>
-                <DialogDescription>Define the exact timeframe for this class session.</DialogDescription>
+                <DialogTitle>Schedule Session for {currentDay}</DialogTitle>
+                <DialogDescription>Assign teacher, room, and exact time slot.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
@@ -349,11 +332,10 @@ export default function TimetablePage() {
         </div>
       </div>
 
-      {/* Filters Toolbar */}
       <div className="flex flex-wrap items-center gap-4 bg-muted/30 p-4 rounded-xl border border-border/50">
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-primary" />
-          <span className="text-sm font-bold uppercase tracking-tight">Filters:</span>
+          <span className="text-sm font-bold uppercase tracking-tight">Active Filters:</span>
         </div>
         
         <div className="flex items-center gap-2 text-xs">
@@ -406,14 +388,10 @@ export default function TimetablePage() {
           <Button 
             variant="ghost" 
             size="sm" 
-            className="h-8 text-[10px] font-bold uppercase text-primary/60 hover:text-primary"
-            onClick={() => {
-              setFilterCampus("All")
-              setFilterTeacher("All")
-              setFilterUnit("All")
-            }}
+            className="h-8 text-[10px] font-bold uppercase text-primary/60"
+            onClick={() => { setFilterCampus("All"); setFilterTeacher("All"); setFilterUnit("All"); }}
           >
-            Clear All
+            Clear
           </Button>
         )}
       </div>
@@ -444,26 +422,20 @@ export default function TimetablePage() {
                 <div className="relative overflow-y-auto max-h-[1200px]">
                   <div 
                     className="grid border-b w-full"
-                    style={{ 
-                      gridTemplateColumns: "80px 1fr",
-                      gridTemplateRows: `repeat(${HOURS.length}, ${ROW_HEIGHT}px)`
-                    }}
+                    style={{ gridTemplateColumns: "80px 1fr", gridTemplateRows: `repeat(${HOURS.length}, ${ROW_HEIGHT}px)` }}
                   >
-                    {HOURS.map((hour, rowIdx) => (
+                    {HOURS.map((hour) => (
                       <React.Fragment key={hour}>
                         <div className="border-b border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground bg-muted/5 sticky left-0 z-20">
                           {hour}
                         </div>
                         <div className="border-b group relative bg-background/30">
-                          <div className="w-full h-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-0">
+                          <div className="w-full h-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                             <Button 
                               variant="ghost" 
                               size="icon" 
-                              className="h-8 w-8 rounded-full bg-primary/10 hover:bg-primary/20"
-                              onClick={() => {
-                                setSelectedStartTime(hour)
-                                setIsAddOpen(true)
-                              }}
+                              className="h-8 w-8 rounded-full bg-primary/10"
+                              onClick={() => { setSelectedStartTime(hour); setIsAddOpen(true); }}
                             >
                               <Plus className="h-4 w-4 text-primary" />
                             </Button>
@@ -494,17 +466,14 @@ export default function TimetablePage() {
                         <div 
                           key={entry.id}
                           className="absolute z-10 p-1 pointer-events-auto transition-all"
-                          style={{
-                            top: startOffset,
-                            height: durationPx,
-                            left: `${leftPos}%`,
-                            width: `${laneWidth}%`
-                          }}
+                          style={{ top: startOffset, height: durationPx, left: `${leftPos}%`, width: `${laneWidth}%` }}
                         >
                           <div 
                             className={cn(
                               "w-full h-full rounded-lg border border-white/20 shadow-xl p-3 text-white flex flex-col group overflow-hidden cursor-pointer",
-                              unit?.type === 'theory' ? "bg-blue-600/90 hover:bg-blue-700" : "bg-orange-600/90 hover:bg-orange-700"
+                              unit?.type === 'theory' ? "bg-blue-600/90 hover:bg-blue-700" : 
+                              unit?.type === 'practical' ? "bg-orange-600/90 hover:bg-orange-700" :
+                              "bg-emerald-600/90 hover:bg-emerald-700" // For 'online'
                             )}
                           >
                             <div className="flex justify-between items-start mb-1">
@@ -515,10 +484,7 @@ export default function TimetablePage() {
                                  variant="ghost" 
                                  size="icon" 
                                  className="h-5 w-5 text-white hover:bg-white/20 opacity-0 group-hover:opacity-100"
-                                 onClick={(e) => {
-                                   e.stopPropagation()
-                                   handleDeleteSession(entry.id)
-                                 }}
+                                 onClick={(e) => { e.stopPropagation(); handleDeleteSession(entry.id); }}
                                >
                                  <Trash2 className="h-3 w-3" />
                                </Button>
@@ -535,7 +501,7 @@ export default function TimetablePage() {
                               <DropdownMenuContent className="w-64">
                                 <DropdownMenuLabel className="flex items-center gap-2">
                                   <Info className="h-4 w-4 text-primary" />
-                                  Session Details
+                                  Class Details
                                 </DropdownMenuLabel>
                                 <DropdownMenuSeparator />
                                 <div className="p-3 space-y-3">
@@ -566,7 +532,7 @@ export default function TimetablePage() {
 
                             <div className="mt-auto space-y-1">
                               <div className="flex items-center gap-2 text-[10px] font-semibold opacity-90 truncate">
-                                 <Users className="h-3 w-3 shrink-0" />
+                                 <UserIcon className="h-3 w-3 shrink-0" />
                                  {teacher?.name}
                               </div>
                               <div className="flex items-center gap-2 text-[10px] font-mono opacity-90 truncate">
@@ -585,8 +551,8 @@ export default function TimetablePage() {
           ) : (
             <Card className="border-none shadow-xl bg-card">
               <CardHeader>
-                <CardTitle className="font-headline">Weekly Session List</CardTitle>
-                <CardDescription>Comprehensive overview of all scheduled classes.</CardDescription>
+                <CardTitle className="font-headline">Weekly Overview</CardTitle>
+                <CardDescription>Comprehensive list of all scheduled academic activities.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="rounded-md border overflow-hidden">
@@ -596,8 +562,8 @@ export default function TimetablePage() {
                         <TableHead>Day</TableHead>
                         <TableHead>Time</TableHead>
                         <TableHead>Academic Unit</TableHead>
-                        <TableHead>Teacher</TableHead>
-                        <TableHead>Room</TableHead>
+                        <TableHead>Trainer</TableHead>
+                        <TableHead>Location</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -612,7 +578,14 @@ export default function TimetablePage() {
                             <TableCell>
                               <div className="flex flex-col">
                                 <span className="font-bold text-sm">{unit?.name}</span>
-                                <span className="text-[10px] text-muted-foreground uppercase">{unit?.type}</span>
+                                <span className={cn(
+                                  "text-[10px] uppercase font-bold px-1.5 rounded w-fit",
+                                  unit?.type === 'theory' ? "bg-blue-100 text-blue-700" :
+                                  unit?.type === 'practical' ? "bg-orange-100 text-orange-700" :
+                                  "bg-emerald-100 text-emerald-700"
+                                )}>
+                                  {unit?.type}
+                                </span>
                               </div>
                             </TableCell>
                             <TableCell className="text-sm font-medium">{teacher?.name}</TableCell>
@@ -621,7 +594,7 @@ export default function TimetablePage() {
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
-                                className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100"
                                 onClick={() => handleDeleteSession(session.id)}
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -633,7 +606,7 @@ export default function TimetablePage() {
                       {allFilteredSessions.length === 0 && (
                         <TableRow>
                           <TableCell colSpan={6} className="h-24 text-center text-muted-foreground italic">
-                            No classes found matching the current filters.
+                            No sessions match current criteria.
                           </TableCell>
                         </TableRow>
                       )}
@@ -654,9 +627,9 @@ export default function TimetablePage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {detectedConflicts.filter(c => viewMode === 'daily' ? c.includes(currentDay) : true).length > 0 ? (
+              {detectedConflicts.length > 0 ? (
                 <div className="space-y-3">
-                  {detectedConflicts.filter(c => viewMode === 'daily' ? c.includes(currentDay) : true).map((conflict, idx) => (
+                  {detectedConflicts.map((conflict, idx) => (
                     <div key={idx} className="p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-[10px] font-medium text-destructive flex gap-2">
                       <AlertTriangle className="h-3 w-3 shrink-0" />
                       {conflict}
@@ -669,12 +642,12 @@ export default function TimetablePage() {
                     <CheckCircle2 className="h-8 w-8 text-green-500" />
                   </div>
                   <p className="text-sm font-semibold">Integrity Verified</p>
-                  <p className="text-[10px] text-muted-foreground">All Novus resources are validly allocated.</p>
+                  <p className="text-[10px] text-muted-foreground">All resource allocations are valid.</p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center py-6 text-center space-y-2 text-muted-foreground opacity-50">
                   <Info className="h-8 w-8" />
-                  <p className="text-xs italic">No matches scheduled.</p>
+                  <p className="text-xs italic">No data scheduled.</p>
                 </div>
               )}
             </CardContent>
