@@ -1,56 +1,37 @@
 
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useMemo } from "react"
 import { 
   Plus, 
   Search, 
   Trash2, 
-  Edit2, 
   Loader2, 
-  Calendar as CalendarIcon, 
-  Clock, 
-  X,
-  Building2,
-  BookOpen,
-  CalendarPlus,
-  MapPin,
-  User,
-  MoreVertical,
-  Mail,
-  RefreshCw,
+  BookOpen, 
   Filter,
   CalendarDays,
   DoorOpen,
-  Settings2
+  Mail,
+  Clock,
+  ExternalLink
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
-import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { CAMPUSES, DAYS } from "@/lib/mock-data"
-import { Teacher, Campus, Day, Unit, TimetableEntry, Room } from "@/lib/types"
+import { Teacher, Campus, Unit, TimetableEntry } from "@/lib/types"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, deleteDoc } from "firebase/firestore"
-import { setDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuLabel, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
-} from "@/dropdown-menu"
+import { cn } from "@/lib/utils"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 
@@ -147,7 +128,11 @@ export default function TeachersPage() {
   // Filters
   const [selectedCampuses, setSelectedCampuses] = useState<string[]>([])
   const [selectedUnits, setSelectedUnits] = useState<string[]>([])
+  const [selectedDays, setSelectedDays] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState("")
+
+  // Detail Modal State
+  const [selectedTeacherForDetail, setSelectedTeacherForDetail] = useState<Teacher | null>(null)
 
   const filteredTeachers = useMemo(() => {
     if (!teachers) return []
@@ -162,21 +147,30 @@ export default function TeachersPage() {
     if (selectedUnits.length > 0) {
       data = data.filter(t => t.qualifiedUnits.some(u => selectedUnits.includes(u)))
     }
+    if (selectedDays.length > 0 && sessions) {
+      const teachersWithClassesOnSelectedDays = new Set(
+        sessions.filter(s => selectedDays.includes(s.day)).map(s => s.teacherId)
+      )
+      data = data.filter(t => teachersWithClassesOnSelectedDays.has(t.id))
+    }
     
     return data.sort((a,b) => a.name.localeCompare(b.name))
-  }, [teachers, searchQuery, selectedCampuses, selectedUnits])
+  }, [teachers, searchQuery, selectedCampuses, selectedUnits, selectedDays, sessions])
 
-  const [isBulkOpen, setIsBulkOpen] = useState(false)
+  const teacherSessions = useMemo(() => {
+    if (!selectedTeacherForDetail || !sessions) return []
+    return sessions
+      .filter(s => s.teacherId === selectedTeacherForDetail.id)
+      .sort((a, b) => {
+        const dayDiff = DAYS.indexOf(a.day) - DAYS.indexOf(b.day)
+        if (dayDiff !== 0) return dayDiff
+        return a.startTime.localeCompare(b.startTime)
+      })
+  }, [selectedTeacherForDetail, sessions])
+
   const [isSingleOpen, setIsSingleOpen] = useState(false)
-  const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null)
-  const [isScheduleOpen, setIsScheduleOpen] = useState(false)
-  const [schedulingTeacher, setSchedulingTeacher] = useState<Teacher | null>(null)
-  
-  // Single Add Teacher State
   const [newTeacherName, setNewTeacherName] = useState("")
   const [newTeacherEmail, setNewTeacherEmail] = useState("")
-  const [newQualifiedUnits, setNewQualifiedUnits] = useState<string[]>([])
-  const [newCampuses, setNewCampuses] = useState<Campus[]>(['Online'])
 
   const handleSingleAdd = () => {
     if (!newTeacherName.trim()) return
@@ -185,8 +179,8 @@ export default function TeachersPage() {
       id,
       name: newTeacherName.trim(),
       email: newTeacherEmail.trim() || `${newTeacherName.trim().toLowerCase().replace(/\s+/g, '')}@novus.edu.au`,
-      qualifiedUnits: newQualifiedUnits,
-      campuses: newCampuses,
+      qualifiedUnits: [],
+      campuses: ['Online'],
       availability: []
     }
     setDocumentNonBlocking(doc(db, "teachers", id), teacherData, { merge: true })
@@ -195,8 +189,10 @@ export default function TeachersPage() {
   }
 
   const handleDelete = (id: string) => {
-    deleteDoc(doc(db, "teachers", id))
-    toast({ title: "Teacher Deleted" })
+    if (confirm("Delete this teacher? This will not remove their scheduled classes, which may result in unassigned sessions.")) {
+      deleteDoc(doc(db, "teachers", id))
+      toast({ title: "Teacher Deleted" })
+    }
   }
 
   if (loadingTeachers || loadingSessions) {
@@ -210,7 +206,10 @@ export default function TeachersPage() {
   return (
     <div className="flex-1 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight font-headline">Faculty Directory</h2>
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight font-headline">Faculty Directory</h2>
+          <p className="text-muted-foreground text-sm">Click on a teacher's name to view their individual schedule.</p>
+        </div>
         <Button onClick={() => setIsSingleOpen(true)}>
           <Plus className="mr-2 h-4 w-4" /> New Teacher
         </Button>
@@ -233,6 +232,14 @@ export default function TeachersPage() {
         </div>
 
         <MultiSelectFilter 
+          label="Days"
+          icon={CalendarDays}
+          options={DAYS.map(d => ({ label: d, value: d }))}
+          selected={selectedDays}
+          onChange={setSelectedDays}
+        />
+
+        <MultiSelectFilter 
           label="Sites"
           icon={DoorOpen}
           options={CAMPUSES.map(c => ({ label: c, value: c }))}
@@ -248,12 +255,12 @@ export default function TeachersPage() {
           onChange={setSelectedUnits}
         />
 
-        {(selectedCampuses.length > 0 || selectedUnits.length > 0 || searchQuery) && (
+        {(selectedCampuses.length > 0 || selectedUnits.length > 0 || selectedDays.length > 0 || searchQuery) && (
           <Button 
             variant="ghost" 
             size="sm" 
             className="h-8 text-[10px] font-bold uppercase text-primary/60"
-            onClick={() => { setSelectedCampuses([]); setSelectedUnits([]); setSearchQuery(""); }}
+            onClick={() => { setSelectedCampuses([]); setSelectedUnits([]); setSelectedDays([]); setSearchQuery(""); }}
           >
             Clear All
           </Button>
@@ -275,10 +282,16 @@ export default function TeachersPage() {
               {filteredTeachers.map((teacher) => (
                 <TableRow key={teacher.id} className="group">
                   <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-bold">{teacher.name}</span>
+                    <button 
+                      onClick={() => setSelectedTeacherForDetail(teacher)}
+                      className="flex flex-col text-left hover:text-primary transition-colors group/btn"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold group-hover/btn:underline">{teacher.name}</span>
+                        <ExternalLink className="h-3 w-3 opacity-0 group-hover/btn:opacity-100 transition-opacity" />
+                      </div>
                       <span className="text-[10px] text-muted-foreground">{teacher.email || 'N/A'}</span>
-                    </div>
+                    </button>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1 max-w-[300px]">
@@ -286,6 +299,7 @@ export default function TeachersPage() {
                         const u = units?.find(unit => unit.id === uid)
                         return <Badge key={uid} variant="secondary" className="text-[10px]">{u?.name || uid}</Badge>
                       })}
+                      {teacher.qualifiedUnits.length === 0 && <span className="text-[10px] text-muted-foreground italic">No qualifications listed</span>}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -302,25 +316,113 @@ export default function TeachersPage() {
                   </TableCell>
                 </TableRow>
               ))}
+              {filteredTeachers.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
+                    No faculty members found matching filters.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
-      <Dialog open={isSingleOpen} onOpenChange={setIsSingleOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Add Teacher</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Name</Label>
-              <Input value={newTeacherName} onChange={e => setNewTeacherName(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Email</Label>
-              <Input value={newTeacherEmail} onChange={e => setNewTeacherEmail(e.target.value)} />
+      {/* Teacher Detail Modal */}
+      <Dialog open={!!selectedTeacherForDetail} onOpenChange={(open) => !open && setSelectedTeacherForDetail(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-2xl">
+              <span className="font-black text-primary uppercase tracking-tight">{selectedTeacherForDetail?.name}</span>
+              <Badge variant="outline">Schedule</Badge>
+            </DialogTitle>
+            <DialogDescription className="flex items-center gap-2">
+              <Mail className="h-3 w-3" /> {selectedTeacherForDetail?.email}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4 border-b pb-2">Assigned Classes</h4>
+            <div className="max-h-[400px] overflow-y-auto rounded-md border">
+              <Table>
+                <TableHeader className="bg-muted/50 sticky top-0">
+                  <TableRow>
+                    <TableHead>Day & Time</TableHead>
+                    <TableHead>Academic Unit</TableHead>
+                    <TableHead>Location</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {teacherSessions.map((session) => {
+                    const unit = units?.find(u => u.id === session.unitId)
+                    return (
+                      <TableRow key={session.id}>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-bold text-xs">{session.day}</span>
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                              <Clock className="h-2.5 w-2.5" /> {session.startTime} - {session.endTime}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold">{unit?.name || 'Unknown Unit'}</span>
+                            <Badge variant="secondary" className="w-fit text-[9px] h-4 uppercase">
+                              {unit?.type || 'Theory'}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs max-w-[200px] truncate">{session.room}</TableCell>
+                      </TableRow>
+                    )
+                  })}
+                  {teacherSessions.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
+                        No classes currently assigned to this teacher.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
             </div>
           </div>
-          <DialogFooter><Button onClick={handleSingleAdd}>Save Teacher</Button></DialogFooter>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedTeacherForDetail(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Teacher Dialog */}
+      <Dialog open={isSingleOpen} onOpenChange={setIsSingleOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add New Faculty Member</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Full Name</Label>
+              <Input 
+                placeholder="e.g. John Doe" 
+                value={newTeacherName} 
+                onChange={e => setNewTeacherName(e.target.value)} 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Professional Email</Label>
+              <Input 
+                type="email" 
+                placeholder="johndoe@novus.edu.au" 
+                value={newTeacherEmail} 
+                onChange={e => setNewTeacherEmail(e.target.value)} 
+              />
+              <p className="text-[10px] text-muted-foreground">Leave blank to auto-generate based on name.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsSingleOpen(false)}>Cancel</Button>
+            <Button onClick={handleSingleAdd} disabled={!newTeacherName.trim()}>Save Teacher</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
