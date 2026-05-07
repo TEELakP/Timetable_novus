@@ -29,7 +29,7 @@ import { Label } from "@/components/ui/label"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DAYS, HOURS, CAMPUSES, NOVUS_TRAINERS, NOVUS_UNITS, NOVUS_ROOMS } from "@/lib/mock-data"
+import { DAYS, HOURS, CAMPUSES, NOVUS_TRAINERS, NOVUS_UNITS, NOVUS_ROOMS, NOVUS_SCHEDULE_RAW } from "@/lib/mock-data"
 import { generateInitialTimetable } from "@/ai/flows/generate-initial-timetable"
 import { TimetableEntry, Teacher, Unit, Room, Day, Campus } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
@@ -160,8 +160,17 @@ export default function TimetablePage() {
         batch.set(doc(db, "rooms", r.id), r)
       })
 
+      // 4. Seed Detailed Schedule
+      NOVUS_SCHEDULE_RAW.forEach((entry, idx) => {
+        const id = `novus-seed-${idx}`
+        batch.set(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", id), {
+          ...entry,
+          id
+        })
+      })
+
       await batch.commit()
-      toast({ title: "Demo Data Seeded", description: "All Novus faculty, units, and rooms are now in Firestore." })
+      toast({ title: "Novus Institutional Data Seeded", description: "All faculty, units, rooms, and session timings are now in Firestore." })
     } catch (error) {
       toast({ title: "Seeding Failed", variant: "destructive" })
     } finally {
@@ -196,9 +205,8 @@ export default function TimetablePage() {
       })
       
       const batch = writeBatch(db)
-      sessions?.forEach(s => {
-        batch.delete(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id))
-      })
+      // Optional: Clear existing if desired
+      // sessions?.forEach(s => batch.delete(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id)))
 
       result.timetable.forEach((entry: any, idx: number) => {
         const id = `ai-gen-${Date.now()}-${idx}`
@@ -233,8 +241,11 @@ export default function TimetablePage() {
 
     sessions.forEach(s => {
       const start = parseInt(s.startTime.split(':')[0])
+      const startMin = parseInt(s.startTime.split(':')[1])
       const end = parseInt(s.endTime.split(':')[0]) || 24
+      const endMin = parseInt(s.endTime.split(':')[1]) || 0
       
+      // Simplified conflict checking: hourly slots
       for (let h = start; h < end; h++) {
         const slotKey = `${s.day}-${h.toString().padStart(2, '0')}:00`
         
@@ -360,21 +371,11 @@ export default function TimetablePage() {
                 <div className="grid grid-cols-2 gap-4">
                    <div className="space-y-2">
                     <Label>Start Time</Label>
-                    <Select value={selectedStartTime} onValueChange={setSelectedStartTime}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {HOURS.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <Input type="time" value={selectedStartTime} onChange={e => setSelectedStartTime(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>End Time</Label>
-                    <Select value={selectedEndTime} onValueChange={setSelectedEndTime}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {HOURS.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <Input type="time" value={selectedEndTime} onChange={e => setSelectedEndTime(e.target.value)} />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -471,9 +472,15 @@ export default function TimetablePage() {
                     {positionedSessions.map(entry => {
                       const unit = units?.find(u => u.id === entry.unitId)
                       const teacher = teachers?.find(t => t.id === entry.teacherId)
+                      
                       const startHour = parseInt(entry.startTime.split(':')[0])
+                      const startMin = parseInt(entry.startTime.split(':')[1])
                       const endHourNum = parseInt(entry.endTime.split(':')[0]) || 24
-                      const duration = Math.max(endHourNum - startHour, 0.5)
+                      const endMinNum = parseInt(entry.endTime.split(':')[1]) || 0
+                      
+                      const startOffset = (startHour + (startMin / 60)) * ROW_HEIGHT
+                      const endOffset = (endHourNum + (endMinNum / 60)) * ROW_HEIGHT
+                      const durationPx = Math.max(endOffset - startOffset, ROW_HEIGHT / 2)
                       
                       const laneWidth = 100 / entry.colSpan
                       const leftPos = entry.colIdx * laneWidth
@@ -483,8 +490,8 @@ export default function TimetablePage() {
                           key={entry.id}
                           className="absolute z-10 p-1 pointer-events-auto transition-all"
                           style={{
-                            top: startHour * ROW_HEIGHT,
-                            height: duration * ROW_HEIGHT,
+                            top: startOffset,
+                            height: durationPx,
                             left: `${leftPos}%`,
                             width: `${laneWidth}%`
                           }}
