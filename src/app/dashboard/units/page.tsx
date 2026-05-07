@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState } from "react"
@@ -13,7 +14,8 @@ import {
   Calendar,
   User,
   MapPin,
-  Globe
+  Globe,
+  Settings2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -172,14 +174,14 @@ export default function UnitsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="unit-type">Type</Label>
+                    <Label htmlFor="unit-type">Delivery Mode</Label>
                     <Select value={newUnitType} onValueChange={(value: any) => setNewUnitType(value)}>
                       <SelectTrigger id="unit-type">
-                        <SelectValue placeholder="Select type" />
+                        <SelectValue placeholder="Select mode" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="theory">Theory</SelectItem>
-                        <SelectItem value="practical">Practical</SelectItem>
+                        <SelectItem value="theory">Classroom</SelectItem>
+                        <SelectItem value="practical">Workshop</SelectItem>
                         <SelectItem value="online">Online</SelectItem>
                       </SelectContent>
                     </Select>
@@ -228,7 +230,7 @@ export default function UnitsPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Weekly Theory Hours</CardTitle>
+            <CardTitle className="text-sm font-medium">Weekly Classroom Hours</CardTitle>
             <Layers className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -239,7 +241,7 @@ export default function UnitsPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Weekly Practical Hours</CardTitle>
+            <CardTitle className="text-sm font-medium">Weekly Workshop Hours</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -272,7 +274,7 @@ export default function UnitsPage() {
               <TableHeader className="bg-muted/30">
                 <TableRow>
                   <TableHead>Unit Name</TableHead>
-                  <TableHead>Type</TableHead>
+                  <TableHead>Delivery Mode</TableHead>
                   <TableHead>Weekly Total</TableHead>
                   <TableHead>Frequency</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -338,7 +340,7 @@ export default function UnitsPage() {
                               : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
                           }
                         >
-                          {unit.type.charAt(0).toUpperCase() + unit.type.slice(1)}
+                          {unit.type === 'theory' ? 'Classroom' : unit.type === 'practical' ? 'Workshop' : 'Online'}
                         </Badge>
                       </TableCell>
                       <TableCell>{unit.durationHours} hrs/week</TableCell>
@@ -367,14 +369,14 @@ export default function UnitsPage() {
                                   </div>
                                   <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                      <Label htmlFor="edit-type">Type</Label>
+                                      <Label htmlFor="edit-type">Delivery Mode</Label>
                                       <Select value={editingUnit.type} onValueChange={(value: any) => setEditingUnit({...editingUnit, type: value})}>
                                         <SelectTrigger id="edit-type">
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="theory">Theory</SelectItem>
-                                          <SelectItem value="practical">Practical</SelectItem>
+                                          <SelectItem value="theory">Classroom</SelectItem>
+                                          <SelectItem value="practical">Workshop</SelectItem>
                                           <SelectItem value="online">Online</SelectItem>
                                         </SelectContent>
                                       </Select>

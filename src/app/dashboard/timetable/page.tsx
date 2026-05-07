@@ -19,7 +19,10 @@ import {
   Database,
   BookOpen,
   User as UserIcon,
-  Clock
+  Clock,
+  Layers,
+  Globe,
+  Settings2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -62,6 +65,7 @@ export default function TimetablePage() {
   const [filterCampus, setFilterCampus] = useState<Campus | "All">("All")
   const [filterTeacher, setFilterTeacher] = useState<string | "All">("All")
   const [filterUnit, setFilterUnit] = useState<string | "All">("All")
+  const [filterType, setFilterType] = useState<string | "All">("All")
   const [currentDayIndex, setCurrentDayIndex] = useState(0)
   const [viewMode, setViewMode] = useState<"daily" | "weekly">("daily")
   
@@ -108,6 +112,14 @@ export default function TimetablePage() {
     if (filterUnit !== "All") {
       data = data.filter(s => s.unitId === filterUnit)
     }
+
+    // Filter by Delivery Mode (Type)
+    if (filterType !== "All") {
+      data = data.filter(s => {
+        const unit = units?.find(u => u.id === s.unitId)
+        return unit?.type === filterType
+      })
+    }
     
     return data.sort((a, b) => {
       const dayIndexA = DAYS.indexOf(a.day)
@@ -115,7 +127,7 @@ export default function TimetablePage() {
       if (dayIndexA !== dayIndexB) return dayIndexA - dayIndexB
       return a.startTime.localeCompare(b.startTime)
     })
-  }, [sessions, filterCampus, filterTeacher, filterUnit, rooms])
+  }, [sessions, filterCampus, filterTeacher, filterUnit, filterType, rooms, units])
 
   const filteredSessions = useMemo(() => {
     return allFilteredSessions.filter(s => s.day === currentDay)
@@ -307,7 +319,7 @@ export default function TimetablePage() {
           <DoorOpen className="h-3 w-3" />
           <span className="font-semibold">Site:</span>
           <Select value={filterCampus} onValueChange={(v: any) => setFilterCampus(v)}>
-            <SelectTrigger className="h-8 w-[140px] bg-background">
+            <SelectTrigger className="h-8 w-[120px] bg-background">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -321,7 +333,7 @@ export default function TimetablePage() {
           <UserIcon className="h-3 w-3" />
           <span className="font-semibold">Trainer:</span>
           <Select value={filterTeacher} onValueChange={setFilterTeacher}>
-            <SelectTrigger className="h-8 w-[160px] bg-background">
+            <SelectTrigger className="h-8 w-[140px] bg-background">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -337,7 +349,7 @@ export default function TimetablePage() {
           <BookOpen className="h-3 w-3" />
           <span className="font-semibold">Subject:</span>
           <Select value={filterUnit} onValueChange={setFilterUnit}>
-            <SelectTrigger className="h-8 w-[180px] bg-background">
+            <SelectTrigger className="h-8 w-[160px] bg-background">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -349,12 +361,28 @@ export default function TimetablePage() {
           </Select>
         </div>
 
-        {(filterCampus !== "All" || filterTeacher !== "All" || filterUnit !== "All") && (
+        <div className="flex items-center gap-2 text-xs">
+          <Settings2 className="h-3 w-3" />
+          <span className="font-semibold">Mode:</span>
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="h-8 w-[130px] bg-background">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Modes</SelectItem>
+              <SelectItem value="theory">Classroom</SelectItem>
+              <SelectItem value="practical">Workshop</SelectItem>
+              <SelectItem value="online">Online</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {(filterCampus !== "All" || filterTeacher !== "All" || filterUnit !== "All" || filterType !== "All") && (
           <Button 
             variant="ghost" 
             size="sm" 
             className="h-8 text-[10px] font-bold uppercase text-primary/60"
-            onClick={() => { setFilterCampus("All"); setFilterTeacher("All"); setFilterUnit("All"); }}
+            onClick={() => { setFilterCampus("All"); setFilterTeacher("All"); setFilterUnit("All"); setFilterType("All"); }}
           >
             Clear
           </Button>
@@ -438,7 +466,7 @@ export default function TimetablePage() {
                               "w-full h-full rounded-lg border border-white/20 shadow-xl p-3 text-white flex flex-col group overflow-hidden cursor-pointer",
                               unit?.type === 'theory' ? "bg-blue-600/90 hover:bg-blue-700" : 
                               unit?.type === 'practical' ? "bg-orange-600/90 hover:bg-orange-700" :
-                              "bg-emerald-600/90 hover:bg-emerald-700" // For 'online'
+                              "bg-emerald-600/90 hover:bg-emerald-700"
                             )}
                           >
                             <div className="flex justify-between items-start mb-1">
@@ -489,6 +517,15 @@ export default function TimetablePage() {
                                     <div className="flex flex-col">
                                       <span className="text-[10px] uppercase font-bold text-muted-foreground">Trainer</span>
                                       <span className="font-semibold">{teacher?.name}</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <div className="flex flex-col">
+                                      <span className="text-[10px] uppercase font-bold text-muted-foreground">Mode</span>
+                                      <span className="font-semibold">
+                                        {unit?.type === 'theory' ? 'Classroom' : unit?.type === 'practical' ? 'Workshop' : 'Online'}
+                                      </span>
                                     </div>
                                   </div>
                                 </div>
@@ -549,7 +586,7 @@ export default function TimetablePage() {
                                   unit?.type === 'practical' ? "bg-orange-100 text-orange-700" :
                                   "bg-emerald-100 text-emerald-700"
                                 )}>
-                                  {unit?.type}
+                                  {unit?.type === 'theory' ? 'Classroom' : unit?.type === 'practical' ? 'Workshop' : 'Online'}
                                 </span>
                               </div>
                             </TableCell>
