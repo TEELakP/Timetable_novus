@@ -3,7 +3,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Calendar, Users, BookOpen, Settings, LayoutDashboard, DoorOpen, AlertTriangle, Download } from "lucide-react"
+import { Calendar, Users, BookOpen, Settings, LayoutDashboard, DoorOpen, AlertTriangle, Download, Printer } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const items = [
@@ -36,6 +36,11 @@ const items = [
     title: "Rules",
     url: "/dashboard/rules",
     icon: Settings,
+  },
+  {
+    title: "Printable View",
+    url: "/dashboard/print",
+    icon: Printer,
   },
   {
     title: "Export",
