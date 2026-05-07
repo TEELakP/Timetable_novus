@@ -104,6 +104,25 @@
         "campus"
       ]
     },
+    "SchedulingRule": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SchedulingRule",
+      "type": "object",
+      "description": "A constraint or rule that the AI generator must follow when creating a timetable.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "description": "The text content of the rule."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
     "ClassSession": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ClassSession",
@@ -212,6 +231,16 @@
             "$ref": "#/backend/entities/Room"
           },
           "description": "Stores room definitions and capacities."
+        }
+      },
+      {
+        "path": "/schedulingRules/{ruleId}",
+        "definition": {
+          "entityName": "SchedulingRule",
+          "schema": {
+            "$ref": "#/backend/entities/SchedulingRule"
+          },
+          "description": "Stores custom scheduling constraints for the AI."
         }
       },
       {

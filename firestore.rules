@@ -27,6 +27,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /schedulingRules/{ruleId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     match /timetables/{timetableId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
