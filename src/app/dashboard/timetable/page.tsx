@@ -6,8 +6,6 @@ import {
   ChevronLeft, 
   ChevronRight, 
   Info,
-  CheckCircle2,
-  Users,
   Plus,
   Loader2,
   Trash2,
@@ -20,8 +18,6 @@ import {
   BookOpen,
   User as UserIcon,
   Clock,
-  Layers,
-  Globe,
   Settings2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -33,6 +29,10 @@ import { Input } from "@/components/ui/input"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Separator } from "@/components/ui/separator"
+import { Badge } from "@/components/ui/badge"
 import { DAYS, HOURS, CAMPUSES, NOVUS_TRAINERS, NOVUS_UNITS, NOVUS_ROOMS, NOVUS_SCHEDULE_RAW } from "@/lib/mock-data"
 import { TimetableEntry, Teacher, Unit, Room, Day, Campus } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
@@ -44,11 +44,95 @@ import { deleteDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/no
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 const ROW_HEIGHT = 64
 
+const DELIVERY_MODES = [
+  { value: 'theory', label: 'Classroom' },
+  { value: 'practical', label: 'Workshop' },
+  { value: 'online', label: 'Online' },
+]
+
+function MultiSelectFilter({ 
+  label, 
+  options, 
+  selected, 
+  onChange,
+  icon: Icon
+}: { 
+  label: string, 
+  options: { label: string, value: string }[], 
+  selected: string[], 
+  onChange: (values: string[]) => void,
+  icon: any
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="h-8 border-dashed bg-background">
+          <Icon className="mr-2 h-3 w-3" />
+          {label}
+          {selected.length > 0 && (
+            <>
+              <Separator orientation="vertical" className="mx-2 h-4" />
+              <Badge variant="secondary" className="rounded-sm px-1 font-normal lg:hidden">
+                {selected.length}
+              </Badge>
+              <div className="hidden space-x-1 lg:flex">
+                {selected.length > 2 ? (
+                  <Badge variant="secondary" className="rounded-sm px-1 font-normal">
+                    {selected.length} selected
+                  </Badge>
+                ) : (
+                  options
+                    .filter((option) => selected.includes(option.value))
+                    .map((option) => (
+                      <Badge variant="secondary" key={option.value} className="rounded-sm px-1 font-normal">
+                        {option.label}
+                      </Badge>
+                    ))
+                )}
+              </div>
+            </>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[200px] p-0" align="start">
+        <div className="p-2 space-y-1 max-h-[300px] overflow-y-auto">
+          {options.map((option) => (
+            <div key={option.value} className="flex items-center space-x-2 p-1.5 hover:bg-muted rounded-sm cursor-pointer" onClick={() => {
+              const newSelected = selected.includes(option.value)
+                ? selected.filter(v => v !== option.value)
+                : [...selected, option.value]
+              onChange(newSelected)
+            }}>
+              <Checkbox 
+                id={`filter-${label}-${option.value}`} 
+                checked={selected.includes(option.value)}
+                onCheckedChange={() => {}}
+              />
+              <label className="text-xs font-medium leading-none cursor-pointer flex-1">
+                {option.label}
+              </label>
+            </div>
+          ))}
+        </div>
+        {selected.length > 0 && (
+          <>
+            <Separator />
+            <div className="p-1">
+              <Button variant="ghost" className="w-full text-xs h-8" onClick={() => onChange([])}>
+                Clear filters
+              </Button>
+            </div>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export default function TimetablePage() {
   const { toast } = useToast()
   const db = useFirestore()
   
-  // Firestore Data
   const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
   const roomsRef = useMemoFirebase(() => collection(db, "rooms"), [db])
@@ -59,26 +143,26 @@ export default function TimetablePage() {
   const { data: rooms, isLoading: loadingRooms } = useCollection<Room>(roomsRef)
   const { data: sessions, isLoading: loadingSessions } = useCollection<TimetableEntry>(sessionsRef)
 
-  // Local UI State
   const [isSeeding, setIsSeeding] = useState(false)
   const [isAddOpen, setIsAddOpen] = useState(false)
-  const [filterCampus, setFilterCampus] = useState<Campus | "All">("All")
-  const [filterTeacher, setFilterTeacher] = useState<string | "All">("All")
-  const [filterUnit, setFilterUnit] = useState<string | "All">("All")
-  const [filterType, setFilterType] = useState<string | "All">("All")
+  
+  // Multi-select state
+  const [selectedCampuses, setSelectedCampuses] = useState<string[]>([])
+  const [selectedTeachers, setSelectedTeachers] = useState<string[]>([])
+  const [selectedUnits, setSelectedUnits] = useState<string[]>([])
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([])
+
   const [currentDayIndex, setCurrentDayIndex] = useState(0)
   const [viewMode, setViewMode] = useState<"daily" | "weekly">("daily")
   
   const currentDay = DAYS[currentDayIndex]
 
-  // New Session Form State
   const [selectedUnit, setSelectedUnit] = useState("")
   const [selectedTeacher, setSelectedTeacher] = useState("")
   const [selectedRoom, setSelectedRoom] = useState("")
   const [selectedStartTime, setSelectedStartTime] = useState("09:00")
   const [selectedEndTime, setSelectedEndTime] = useState("11:00")
 
-  // Auto-calculate suggested end time based on unit requirements
   useEffect(() => {
     if (selectedUnit && selectedStartTime) {
       const unit = units?.find(u => u.id === selectedUnit)
@@ -95,29 +179,25 @@ export default function TimetablePage() {
     if (!sessions) return []
     let data = [...sessions]
     
-    // Filter by Site (Campus)
-    if (filterCampus !== "All") {
+    if (selectedCampuses.length > 0) {
       data = data.filter(s => {
         const room = rooms?.find(r => r.name === s.room)
-        return room?.campus === filterCampus
+        return room && selectedCampuses.includes(room.campus)
       })
     }
 
-    // Filter by Teacher
-    if (filterTeacher !== "All") {
-      data = data.filter(s => s.teacherId === filterTeacher)
+    if (selectedTeachers.length > 0) {
+      data = data.filter(s => selectedTeachers.includes(s.teacherId))
     }
 
-    // Filter by Subject (Unit)
-    if (filterUnit !== "All") {
-      data = data.filter(s => s.unitId === filterUnit)
+    if (selectedUnits.length > 0) {
+      data = data.filter(s => selectedUnits.includes(s.unitId))
     }
 
-    // Filter by Delivery Mode (Type)
-    if (filterType !== "All") {
+    if (selectedTypes.length > 0) {
       data = data.filter(s => {
         const unit = units?.find(u => u.id === s.unitId)
-        return unit?.type === filterType
+        return unit && selectedTypes.includes(unit.type)
       })
     }
     
@@ -127,7 +207,7 @@ export default function TimetablePage() {
       if (dayIndexA !== dayIndexB) return dayIndexA - dayIndexB
       return a.startTime.localeCompare(b.startTime)
     })
-  }, [sessions, filterCampus, filterTeacher, filterUnit, filterType, rooms, units])
+  }, [sessions, selectedCampuses, selectedTeachers, selectedUnits, selectedTypes, rooms, units])
 
   const filteredSessions = useMemo(() => {
     return allFilteredSessions.filter(s => s.day === currentDay)
@@ -226,7 +306,7 @@ export default function TimetablePage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Institutional Overview</h2>
-          <p className="text-muted-foreground text-sm">Managing 130+ active sessions across the Novus network.</p>
+          <p className="text-muted-foreground text-sm">Managing {sessions?.length || 0} active sessions across the network.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button 
@@ -237,7 +317,7 @@ export default function TimetablePage() {
             className="text-primary border-primary/20 hover:bg-primary/5"
           >
             {isSeeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
-            Seed Novus Data
+            Seed Institutional Data
           </Button>
 
           <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
@@ -309,82 +389,52 @@ export default function TimetablePage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 bg-muted/30 p-4 rounded-xl border border-border/50">
+      <div className="flex flex-wrap items-center gap-3 bg-muted/30 p-4 rounded-xl border border-border/50">
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-primary" />
-          <span className="text-sm font-bold uppercase tracking-tight">Active Filters:</span>
+          <span className="text-sm font-bold uppercase tracking-tight">Multi-Filters:</span>
         </div>
         
-        <div className="flex items-center gap-2 text-xs">
-          <DoorOpen className="h-3 w-3" />
-          <span className="font-semibold">Site:</span>
-          <Select value={filterCampus} onValueChange={(v: any) => setFilterCampus(v)}>
-            <SelectTrigger className="h-8 w-[120px] bg-background">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All Sites</SelectItem>
-              {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+        <MultiSelectFilter 
+          label="Sites"
+          icon={DoorOpen}
+          options={CAMPUSES.map(c => ({ label: c, value: c }))}
+          selected={selectedCampuses}
+          onChange={setSelectedCampuses}
+        />
 
-        <div className="flex items-center gap-2 text-xs">
-          <UserIcon className="h-3 w-3" />
-          <span className="font-semibold">Trainer:</span>
-          <Select value={filterTeacher} onValueChange={setFilterTeacher}>
-            <SelectTrigger className="h-8 w-[140px] bg-background">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All Trainers</SelectItem>
-              {teachers?.sort((a,b) => a.name.localeCompare(b.name)).map(t => (
-                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <MultiSelectFilter 
+          label="Trainers"
+          icon={UserIcon}
+          options={teachers?.sort((a,b) => a.name.localeCompare(b.name)).map(t => ({ label: t.name, value: t.id })) || []}
+          selected={selectedTeachers}
+          onChange={setSelectedTeachers}
+        />
 
-        <div className="flex items-center gap-2 text-xs">
-          <BookOpen className="h-3 w-3" />
-          <span className="font-semibold">Subject:</span>
-          <Select value={filterUnit} onValueChange={setFilterUnit}>
-            <SelectTrigger className="h-8 w-[160px] bg-background">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All Subjects</SelectItem>
-              {units?.sort((a,b) => a.name.localeCompare(b.name)).map(u => (
-                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <MultiSelectFilter 
+          label="Subjects"
+          icon={BookOpen}
+          options={units?.sort((a,b) => a.name.localeCompare(b.name)).map(u => ({ label: u.name, value: u.id })) || []}
+          selected={selectedUnits}
+          onChange={setSelectedUnits}
+        />
 
-        <div className="flex items-center gap-2 text-xs">
-          <Settings2 className="h-3 w-3" />
-          <span className="font-semibold">Mode:</span>
-          <Select value={filterType} onValueChange={setFilterType}>
-            <SelectTrigger className="h-8 w-[130px] bg-background">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All Modes</SelectItem>
-              <SelectItem value="theory">Classroom</SelectItem>
-              <SelectItem value="practical">Workshop</SelectItem>
-              <SelectItem value="online">Online</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <MultiSelectFilter 
+          label="Modes"
+          icon={Settings2}
+          options={DELIVERY_MODES}
+          selected={selectedTypes}
+          onChange={setSelectedTypes}
+        />
 
-        {(filterCampus !== "All" || filterTeacher !== "All" || filterUnit !== "All" || filterType !== "All") && (
+        {(selectedCampuses.length > 0 || selectedTeachers.length > 0 || selectedUnits.length > 0 || selectedTypes.length > 0) && (
           <Button 
             variant="ghost" 
             size="sm" 
             className="h-8 text-[10px] font-bold uppercase text-primary/60"
-            onClick={() => { setFilterCampus("All"); setFilterTeacher("All"); setFilterUnit("All"); setFilterType("All"); }}
+            onClick={() => { setSelectedCampuses([]); setSelectedTeachers([]); setSelectedUnits([]); setSelectedTypes([]); }}
           >
-            Clear
+            Clear All
           </Button>
         )}
       </div>
