@@ -3,7 +3,6 @@
 
 import React, { useState, useMemo, useEffect } from "react"
 import { 
-  Wand2, 
   ChevronLeft, 
   ChevronRight, 
   AlertTriangle,
@@ -19,7 +18,9 @@ import {
   CalendarDays,
   LayoutGrid,
   List,
-  Database
+  Database,
+  BookOpen,
+  User as UserIcon
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -31,7 +32,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DAYS, HOURS, CAMPUSES, NOVUS_TRAINERS, NOVUS_UNITS, NOVUS_ROOMS, NOVUS_SCHEDULE_RAW } from "@/lib/mock-data"
-import { generateInitialTimetable } from "@/ai/flows/generate-initial-timetable"
 import { TimetableEntry, Teacher, Unit, Room, Day, Campus } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
@@ -50,20 +50,19 @@ export default function TimetablePage() {
   const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
   const roomsRef = useMemoFirebase(() => collection(db, "rooms"), [db])
-  const rulesRef = useMemoFirebase(() => collection(db, "schedulingRules"), [db])
   const sessionsRef = useMemoFirebase(() => collection(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions"), [db])
   
   const { data: teachers, isLoading: loadingTeachers } = useCollection<Teacher>(teachersRef)
   const { data: units, isLoading: loadingUnits } = useCollection<Unit>(unitsRef)
   const { data: rooms, isLoading: loadingRooms } = useCollection<Room>(roomsRef)
-  const { data: rulesData } = useCollection<any>(rulesRef)
   const { data: sessions, isLoading: loadingSessions } = useCollection<TimetableEntry>(sessionsRef)
 
   // Local UI State
-  const [isGenerating, setIsGenerating] = useState(false)
   const [isSeeding, setIsSeeding] = useState(false)
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [filterCampus, setFilterCampus] = useState<Campus | "All">("All")
+  const [filterTeacher, setFilterTeacher] = useState<string | "All">("All")
+  const [filterUnit, setFilterUnit] = useState<string | "All">("All")
   const [currentDayIndex, setCurrentDayIndex] = useState(0)
   const [viewMode, setViewMode] = useState<"daily" | "weekly">("daily")
   
@@ -76,7 +75,7 @@ export default function TimetablePage() {
   const [selectedStartTime, setSelectedStartTime] = useState("09:00")
   const [selectedEndTime, setSelectedEndTime] = useState("11:00")
 
-  // Auto-calculate suggested end time
+  // Auto-calculate suggested end time based on unit requirements
   useEffect(() => {
     if (selectedUnit && selectedStartTime) {
       const unit = units?.find(u => u.id === selectedUnit)
@@ -93,11 +92,22 @@ export default function TimetablePage() {
     if (!sessions) return []
     let data = [...sessions]
     
+    // Filter by Site (Campus)
     if (filterCampus !== "All") {
       data = data.filter(s => {
         const room = rooms?.find(r => r.name === s.room)
         return room?.campus === filterCampus
       })
+    }
+
+    // Filter by Teacher
+    if (filterTeacher !== "All") {
+      data = data.filter(s => s.teacherId === filterTeacher)
+    }
+
+    // Filter by Subject (Unit)
+    if (filterUnit !== "All") {
+      data = data.filter(s => s.unitId === filterUnit)
     }
     
     return data.sort((a, b) => {
@@ -106,7 +116,7 @@ export default function TimetablePage() {
       if (dayIndexA !== dayIndexB) return dayIndexA - dayIndexB
       return a.startTime.localeCompare(b.startTime)
     })
-  }, [sessions, filterCampus, rooms])
+  }, [sessions, filterCampus, filterTeacher, filterUnit, rooms])
 
   const filteredSessions = useMemo(() => {
     return allFilteredSessions.filter(s => s.day === currentDay)
@@ -146,22 +156,18 @@ export default function TimetablePage() {
     const batch = writeBatch(db)
     
     try {
-      // 1. Seed Teachers
       NOVUS_TRAINERS.forEach(t => {
         batch.set(doc(db, "teachers", t.id), t)
       })
       
-      // 2. Seed Units
       NOVUS_UNITS.forEach(u => {
         batch.set(doc(db, "academicUnits", u.id), u)
       })
       
-      // 3. Seed Rooms
       NOVUS_ROOMS.forEach(r => {
         batch.set(doc(db, "rooms", r.id), r)
       })
 
-      // 4. Seed Detailed Schedule
       NOVUS_SCHEDULE_RAW.forEach((entry, idx) => {
         const id = `novus-seed-${idx}`
         batch.set(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", id), {
@@ -176,53 +182,6 @@ export default function TimetablePage() {
       toast({ title: "Seeding Failed", variant: "destructive" })
     } finally {
       setIsSeeding(false)
-    }
-  }
-
-  const handleGenerate = async () => {
-    if (!teachers?.length || !units?.length || !rooms?.length) {
-      toast({ title: "Incomplete Data", description: "Seed the demo data first.", variant: "destructive" })
-      return
-    }
-
-    setIsGenerating(true)
-    try {
-      const result = await generateInitialTimetable({
-        teachers: teachers.map(t => ({
-          id: t.id,
-          name: t.name,
-          availability: t.availability || [],
-          qualifiedUnits: t.qualifiedUnits || [],
-          campuses: t.campuses || []
-        })),
-        units: units.map(u => ({
-          id: u.id,
-          name: u.name,
-          type: u.type,
-          durationHours: u.durationHours,
-          sessionsPerWeek: u.sessionsPerWeek
-        })),
-        schedulingRules: rulesData?.map((r: any) => r.name) || []
-      })
-      
-      const batch = writeBatch(db)
-      // Optional: Clear existing if desired
-      // sessions?.forEach(s => batch.delete(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id)))
-
-      result.timetable.forEach((entry: any, idx: number) => {
-        const id = `ai-gen-${Date.now()}-${idx}`
-        batch.set(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", id), {
-          ...entry,
-          id
-        })
-      })
-      
-      await batch.commit()
-      toast({ title: "AI Timetable Generated", description: `Successfully scheduled ${result.timetable.length} sessions.` })
-    } catch (error) {
-      toast({ title: "Generation Failed", variant: "destructive" })
-    } finally {
-      setIsGenerating(false)
     }
   }
 
@@ -242,11 +201,8 @@ export default function TimetablePage() {
 
     sessions.forEach(s => {
       const start = parseInt(s.startTime.split(':')[0])
-      const startMin = parseInt(s.startTime.split(':')[1])
       const end = parseInt(s.endTime.split(':')[0]) || 24
-      const endMin = parseInt(s.endTime.split(':')[1]) || 0
       
-      // Simplified conflict checking: hourly slots
       for (let h = start; h < end; h++) {
         const slotKey = `${s.day}-${h.toString().padStart(2, '0')}:00`
         
@@ -323,35 +279,21 @@ export default function TimetablePage() {
             Seed Novus Data
           </Button>
 
-          <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)} className="mr-2">
+          <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
             <TabsList className="bg-muted/50 p-1">
               <TabsTrigger value="daily" className="gap-2 h-8">
-                <LayoutGrid className="h-4 w-4" /> Daily Grid
+                <LayoutGrid className="h-4 w-4" /> Grid
               </TabsTrigger>
               <TabsTrigger value="weekly" className="gap-2 h-8">
-                <List className="h-4 w-4" /> Weekly List
+                <List className="h-4 w-4" /> List
               </TabsTrigger>
             </TabsList>
           </Tabs>
 
-          <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-md border text-xs mr-2">
-            <Filter className="h-3 w-3 ml-2" />
-            <span className="font-semibold">Campus:</span>
-            <Select value={filterCampus} onValueChange={(v: any) => setFilterCampus(v)}>
-              <SelectTrigger className="h-8 border-none bg-transparent shadow-none w-[120px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">All Sites</SelectItem>
-                {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Plus className="mr-2 h-4 w-4" /> Match Session
+              <Button variant="default" size="sm" className="bg-primary shadow-lg">
+                <Plus className="mr-2 h-4 w-4" /> Add Session
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md">
@@ -403,15 +345,76 @@ export default function TimetablePage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-
-          <Button onClick={handleGenerate} disabled={isGenerating} size="sm" className="bg-primary/90">
-            {isGenerating ? "AI Processing..." : (
-              <>
-                <Wand2 className="mr-2 h-4 w-4" /> AI Generator
-              </>
-            )}
-          </Button>
         </div>
+      </div>
+
+      {/* Filters Toolbar */}
+      <div className="flex flex-wrap items-center gap-4 bg-muted/30 p-4 rounded-xl border border-border/50">
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-primary" />
+          <span className="text-sm font-bold uppercase tracking-tight">Filters:</span>
+        </div>
+        
+        <div className="flex items-center gap-2 text-xs">
+          <DoorOpen className="h-3 w-3" />
+          <span className="font-semibold">Site:</span>
+          <Select value={filterCampus} onValueChange={(v: any) => setFilterCampus(v)}>
+            <SelectTrigger className="h-8 w-[140px] bg-background">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Sites</SelectItem>
+              {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs">
+          <UserIcon className="h-3 w-3" />
+          <span className="font-semibold">Trainer:</span>
+          <Select value={filterTeacher} onValueChange={setFilterTeacher}>
+            <SelectTrigger className="h-8 w-[160px] bg-background">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Trainers</SelectItem>
+              {teachers?.sort((a,b) => a.name.localeCompare(b.name)).map(t => (
+                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs">
+          <BookOpen className="h-3 w-3" />
+          <span className="font-semibold">Subject:</span>
+          <Select value={filterUnit} onValueChange={setFilterUnit}>
+            <SelectTrigger className="h-8 w-[180px] bg-background">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Subjects</SelectItem>
+              {units?.sort((a,b) => a.name.localeCompare(b.name)).map(u => (
+                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {(filterCampus !== "All" || filterTeacher !== "All" || filterUnit !== "All") && (
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-8 text-[10px] font-bold uppercase text-primary/60 hover:text-primary"
+            onClick={() => {
+              setFilterCampus("All")
+              setFilterTeacher("All")
+              setFilterUnit("All")
+            }}
+          >
+            Clear All
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -567,7 +570,7 @@ export default function TimetablePage() {
             <Card className="border-none shadow-xl bg-card">
               <CardHeader>
                 <CardTitle className="font-headline">Weekly Session List</CardTitle>
-                <CardDescription>Comprehensive overview of all Novus scheduled classes.</CardDescription>
+                <CardDescription>Comprehensive overview of all scheduled classes.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="rounded-md border overflow-hidden">
@@ -614,7 +617,7 @@ export default function TimetablePage() {
                       {allFilteredSessions.length === 0 && (
                         <TableRow>
                           <TableCell colSpan={6} className="h-24 text-center text-muted-foreground italic">
-                            No classes scheduled yet.
+                            No classes found matching the current filters.
                           </TableCell>
                         </TableRow>
                       )}
@@ -630,7 +633,7 @@ export default function TimetablePage() {
           <Card className="shadow-lg border-none bg-gradient-to-br from-card to-muted/20">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg font-headline flex items-center gap-2">
-                <AlertTriangle className={cn("h-5 w-5", detectedConflicts.filter(c => c.includes(viewMode === 'daily' ? currentDay : '') || viewMode === 'weekly').length > 0 ? "text-destructive" : "text-muted-foreground")} />
+                <AlertTriangle className={cn("h-5 w-5", detectedConflicts.length > 0 ? "text-destructive" : "text-muted-foreground")} />
                 Conflict Monitor
               </CardTitle>
             </CardHeader>
@@ -643,9 +646,6 @@ export default function TimetablePage() {
                       {conflict}
                     </div>
                   ))}
-                  <Button variant="outline" className="w-full text-xs h-8 border-destructive/30" size="sm" onClick={handleGenerate}>
-                    AI Re-Balance
-                  </Button>
                 </div>
               ) : (sessions?.length || 0) > 0 ? (
                 <div className="flex flex-col items-center py-6 text-center space-y-2">
