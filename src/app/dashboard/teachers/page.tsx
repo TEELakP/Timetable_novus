@@ -16,7 +16,8 @@ import {
   MapPin,
   User,
   MoreVertical,
-  Mail
+  Mail,
+  RefreshCw
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -87,13 +88,17 @@ export default function TeachersPage() {
   const [newAvailStart, setNewAvailStart] = useState("09:00")
   const [newAvailEnd, setNewAvailEnd] = useState("17:00")
 
+  // Helper to generate institutional email
+  const generateEmailFromName = (name: string) => {
+    return name.trim().toLowerCase().replace(/\s+/g, '') + "@novus.edu.au"
+  }
+
   // Auto-generate email when name changes in Single Add
   useEffect(() => {
-    if (!newTeacherEmail && newTeacherName) {
-      const suggestedEmail = newTeacherName.trim().toLowerCase().replace(/\s+/g, '') + "@novus.edu.au"
-      setNewTeacherEmail(suggestedEmail)
+    if (newTeacherName && !newTeacherEmail) {
+      setNewTeacherEmail(generateEmailFromName(newTeacherName))
     }
-  }, [newTeacherName, newTeacherEmail])
+  }, [newTeacherName])
 
   // Auto-calculate suggested end time based on unit requirements
   useEffect(() => {
@@ -112,7 +117,7 @@ export default function TeachersPage() {
     const names = bulkInput.split('\n').filter(n => n.trim() !== "")
     names.forEach((name, idx) => {
       const id = `t-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`
-      const email = name.trim().toLowerCase().replace(/\s+/g, '') + "@novus.edu.au"
+      const email = generateEmailFromName(name)
       const teacherData: Teacher = {
         id,
         name: name.trim(),
@@ -134,7 +139,7 @@ export default function TeachersPage() {
     const teacherData: Teacher = {
       id,
       name: newTeacherName.trim(),
-      email: newTeacherEmail.trim() || (newTeacherName.trim().toLowerCase().replace(/\s+/g, '') + "@novus.edu.au"),
+      email: newTeacherEmail.trim() || generateEmailFromName(newTeacherName),
       qualifiedUnits: selectedUnitIds,
       campuses: selectedCampuses,
       availability: []
@@ -311,12 +316,23 @@ export default function TeachersPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email Address</Label>
-                    <Input 
-                      id="email" 
-                      placeholder="name@novus.edu.au" 
-                      value={newTeacherEmail}
-                      onChange={(e) => setNewTeacherEmail(e.target.value)}
-                    />
+                    <div className="flex gap-2">
+                      <Input 
+                        id="email" 
+                        placeholder="name@novus.edu.au" 
+                        value={newTeacherEmail}
+                        onChange={(e) => setNewTeacherEmail(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        title="Sync with name"
+                        onClick={() => setNewTeacherEmail(generateEmailFromName(newTeacherName))}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
@@ -530,6 +546,9 @@ export default function TeachersPage() {
                                             value={editingTeacher.name} 
                                             onChange={e => {
                                               const updated = {...editingTeacher, name: e.target.value};
+                                              // Auto-update email as well if it follows the pattern
+                                              const updatedEmail = generateEmailFromName(e.target.value);
+                                              updated.email = updatedEmail;
                                               setEditingTeacher(updated);
                                               setDocumentNonBlocking(doc(db, "teachers", updated.id), updated, { merge: true });
                                             }} 
@@ -537,14 +556,29 @@ export default function TeachersPage() {
                                         </div>
                                         <div className="space-y-2">
                                           <Label>Email Address</Label>
-                                          <Input 
-                                            value={editingTeacher.email || ""} 
-                                            onChange={e => {
-                                              const updated = {...editingTeacher, email: e.target.value};
-                                              setEditingTeacher(updated);
-                                              setDocumentNonBlocking(doc(db, "teachers", updated.id), updated, { merge: true });
-                                            }} 
-                                          />
+                                          <div className="flex gap-2">
+                                            <Input 
+                                              value={editingTeacher.email || ""} 
+                                              onChange={e => {
+                                                const updated = {...editingTeacher, email: e.target.value};
+                                                setEditingTeacher(updated);
+                                                setDocumentNonBlocking(doc(db, "teachers", updated.id), updated, { merge: true });
+                                              }}
+                                              className="flex-1"
+                                            />
+                                            <Button 
+                                              variant="outline" 
+                                              size="icon" 
+                                              title="Sync with name"
+                                              onClick={() => {
+                                                const updated = {...editingTeacher, email: generateEmailFromName(editingTeacher.name)};
+                                                setEditingTeacher(updated);
+                                                setDocumentNonBlocking(doc(db, "teachers", updated.id), updated, { merge: true });
+                                              }}
+                                            >
+                                              <RefreshCw className="h-4 w-4" />
+                                            </Button>
+                                          </div>
                                         </div>
                                       </div>
                                     </TabsContent>
