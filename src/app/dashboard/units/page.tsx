@@ -10,10 +10,12 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Unit } from "@/lib/types"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, deleteDoc } from "firebase/firestore"
-import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { addDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
 export default function UnitsPage() {
@@ -24,6 +26,12 @@ export default function UnitsPage() {
 
   const [bulkInput, setBulkInput] = useState("")
   const [isBulkOpen, setIsBulkOpen] = useState(false)
+  
+  const [isSingleOpen, setIsSingleOpen] = useState(false)
+  const [newUnitName, setNewUnitName] = useState("")
+  const [newUnitType, setNewUnitType] = useState<'theory' | 'practical'>('theory')
+  const [newUnitDuration, setNewUnitDuration] = useState("2")
+  const [newUnitSessions, setNewUnitSessions] = useState("1")
 
   const handleBulkAdd = () => {
     const lines = bulkInput.split('\n').filter(l => l.trim() !== "")
@@ -41,6 +49,25 @@ export default function UnitsPage() {
     setBulkInput("")
     setIsBulkOpen(false)
     toast({ title: "Bulk Add Started", description: "Adding units to the catalog..." })
+  }
+
+  const handleCreateUnit = () => {
+    if (!newUnitName.trim()) return
+    const id = `u-${Date.now()}`
+    const unitData: Unit = {
+      id,
+      name: newUnitName.trim(),
+      type: newUnitType,
+      durationHours: parseInt(newUnitDuration) || 2,
+      sessionsPerWeek: parseInt(newUnitSessions) || 1
+    }
+    setDocumentNonBlocking(doc(db, "academicUnits", id), unitData, { merge: true })
+    setNewUnitName("")
+    setNewUnitType('theory')
+    setNewUnitDuration("2")
+    setNewUnitSessions("1")
+    setIsSingleOpen(false)
+    toast({ title: "Unit Created", description: `${newUnitName} has been added to the catalog.` })
   }
 
   const handleDelete = (id: string) => {
@@ -84,9 +111,69 @@ export default function UnitsPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" /> Create Unit
-          </Button>
+
+          <Dialog open={isSingleOpen} onOpenChange={setIsSingleOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" /> Create Unit
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Academic Unit</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="unit-name">Unit Name</Label>
+                  <Input 
+                    id="unit-name" 
+                    placeholder="e.g. Advanced Mathematics" 
+                    value={newUnitName}
+                    onChange={(e) => setNewUnitName(e.target.value)}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="unit-type">Type</Label>
+                    <Select value={newUnitType} onValueChange={(value: any) => setNewUnitType(value)}>
+                      <SelectTrigger id="unit-type">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="theory">Theory</SelectItem>
+                        <SelectItem value="practical">Practical</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="duration">Duration (Hours)</Label>
+                    <Input 
+                      id="duration" 
+                      type="number" 
+                      min="1" 
+                      max="8" 
+                      value={newUnitDuration}
+                      onChange={(e) => setNewUnitDuration(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="sessions">Sessions per Week</Label>
+                  <Input 
+                    id="sessions" 
+                    type="number" 
+                    min="1" 
+                    max="5" 
+                    value={newUnitSessions}
+                    onChange={(e) => setNewUnitSessions(e.target.value)}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={handleCreateUnit}>Create Unit</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
