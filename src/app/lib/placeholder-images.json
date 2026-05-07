@@ -1,0 +1,11 @@
+
+{
+  "placeholderImages": [
+    {
+      "id": "hero-dashboard",
+      "description": "Clean modern dashboard interface",
+      "imageUrl": "https://picsum.photos/seed/smart-timetable/1200/600",
+      "imageHint": "dashboard interface"
+    }
+  ]
+}
