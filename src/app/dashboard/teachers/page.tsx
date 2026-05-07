@@ -2,7 +2,7 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, Search, Trash2, Edit2, Users, FileText, Check, Loader2 } from "lucide-react"
+import { Plus, Search, Trash2, Edit2, Users, FileText, Loader2, Calendar as CalendarIcon, Clock, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -12,12 +12,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { CAMPUSES } from "@/lib/mock-data"
-import { Teacher, Campus } from "@/lib/types"
+import { CAMPUSES, DAYS } from "@/lib/mock-data"
+import { Teacher, Campus, Day } from "@/lib/types"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, deleteDoc } from "firebase/firestore"
 import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export default function TeachersPage() {
   const { toast } = useToast()
@@ -34,6 +35,11 @@ export default function TeachersPage() {
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null)
   
   const [newTeacherName, setNewTeacherName] = useState("")
+
+  // New Availability State for UI
+  const [newAvailDay, setNewAvailDay] = useState<Day>('Monday')
+  const [newAvailStart, setNewAvailStart] = useState("09:00")
+  const [newAvailEnd, setNewAvailEnd] = useState("17:00")
 
   const handleBulkAdd = () => {
     const names = bulkInput.split('\n').filter(n => n.trim() !== "")
@@ -81,7 +87,9 @@ export default function TeachersPage() {
       ? teacher.qualifiedUnits.filter(id => id !== unitId)
       : [...teacher.qualifiedUnits, unitId]
     
-    setDocumentNonBlocking(doc(db, "teachers", teacher.id), { ...teacher, qualifiedUnits }, { merge: true })
+    const updated = { ...teacher, qualifiedUnits }
+    setEditingTeacher(updated)
+    setDocumentNonBlocking(doc(db, "teachers", teacher.id), updated, { merge: true })
   }
 
   const toggleCampus = (teacher: Teacher, campus: Campus) => {
@@ -89,7 +97,26 @@ export default function TeachersPage() {
       ? teacher.campuses.filter(c => c !== campus)
       : [...teacher.campuses, campus]
     
-    setDocumentNonBlocking(doc(db, "teachers", teacher.id), { ...teacher, campuses }, { merge: true })
+    const updated = { ...teacher, campuses }
+    setEditingTeacher(updated)
+    setDocumentNonBlocking(doc(db, "teachers", teacher.id), updated, { merge: true })
+  }
+
+  const addAvailability = () => {
+    if (!editingTeacher) return
+    const newSlot = { day: newAvailDay, startTime: newAvailStart, endTime: newAvailEnd }
+    const availability = [...(editingTeacher.availability || []), newSlot]
+    const updated = { ...editingTeacher, availability }
+    setEditingTeacher(updated)
+    setDocumentNonBlocking(doc(db, "teachers", editingTeacher.id), updated, { merge: true })
+  }
+
+  const removeAvailability = (index: number) => {
+    if (!editingTeacher) return
+    const availability = editingTeacher.availability.filter((_, i) => i !== index)
+    const updated = { ...editingTeacher, availability }
+    setEditingTeacher(updated)
+    setDocumentNonBlocking(doc(db, "teachers", editingTeacher.id), updated, { merge: true })
   }
 
   if (loadingTeachers) {
@@ -174,7 +201,7 @@ export default function TeachersPage() {
       <Card>
         <CardHeader>
           <CardTitle className="font-headline">Faculty Directory</CardTitle>
-          <CardDescription>Manage teacher profiles, qualifications, and campus assignments.</CardDescription>
+          <CardDescription>Manage teacher profiles, qualifications, and availability.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center py-4">
@@ -190,6 +217,7 @@ export default function TeachersPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Qualified Units</TableHead>
                   <TableHead>Campuses</TableHead>
+                  <TableHead>Availability</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -218,6 +246,16 @@ export default function TeachersPage() {
                         ))}
                       </div>
                     </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                         {teacher.availability?.length > 0 ? teacher.availability.slice(0, 2).map((slot, i) => (
+                            <span key={i} className="text-[10px] text-muted-foreground">
+                               {slot.day.substring(0, 3)} {slot.startTime}-{slot.endTime}
+                            </span>
+                         )) : <span className="text-[10px] text-muted-foreground">None set</span>}
+                         {teacher.availability?.length > 2 && <span className="text-[10px] font-bold">+{teacher.availability.length - 2} more</span>}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Dialog>
@@ -226,15 +264,15 @@ export default function TeachersPage() {
                               <Edit2 className="h-4 w-4" />
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="max-w-2xl">
+                          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                             <DialogHeader>
                               <DialogTitle>Edit Profile: {teacher.name}</DialogTitle>
                             </DialogHeader>
                             {editingTeacher && (
                               <div className="grid gap-6 py-4">
                                 <div className="space-y-4">
-                                  <h4 className="text-sm font-semibold">Qualified Units</h4>
-                                  <div className="grid grid-cols-2 gap-2 max-h-[200px] overflow-y-auto p-1">
+                                  <h4 className="text-sm font-semibold border-b pb-2">Qualified Units</h4>
+                                  <div className="grid grid-cols-2 gap-2 max-h-[150px] overflow-y-auto p-1">
                                     {units?.map(unit => (
                                       <div key={unit.id} className="flex items-center space-x-2">
                                         <Checkbox 
@@ -245,11 +283,11 @@ export default function TeachersPage() {
                                         <Label htmlFor={`unit-${unit.id}`} className="text-xs">{unit.name}</Label>
                                       </div>
                                     ))}
-                                    {(!units || units.length === 0) && <p className="text-xs text-muted-foreground">No units available. Add some in the Units page.</p>}
                                   </div>
                                 </div>
+
                                 <div className="space-y-4">
-                                  <h4 className="text-sm font-semibold">Campus Assignment</h4>
+                                  <h4 className="text-sm font-semibold border-b pb-2">Campus Assignment</h4>
                                   <div className="flex gap-4">
                                     {CAMPUSES.map(campus => (
                                       <div key={campus} className="flex items-center space-x-2">
@@ -261,6 +299,46 @@ export default function TeachersPage() {
                                         <Label htmlFor={`campus-${campus}`} className="text-xs">{campus}</Label>
                                       </div>
                                     ))}
+                                  </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                  <h4 className="text-sm font-semibold border-b pb-2">Availability (Days & Timeframe)</h4>
+                                  <div className="grid grid-cols-4 gap-2 items-end">
+                                    <div className="space-y-1">
+                                      <Label className="text-[10px]">Day</Label>
+                                      <Select value={newAvailDay} onValueChange={(v: Day) => setNewAvailDay(v)}>
+                                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                          {DAYS.map(day => <SelectItem key={day} value={day}>{day}</SelectItem>)}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-[10px]">Start</Label>
+                                      <Input type="time" className="h-8 text-xs" value={newAvailStart} onChange={e => setNewAvailStart(e.target.value)} />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-[10px]">End</Label>
+                                      <Input type="time" className="h-8 text-xs" value={newAvailEnd} onChange={e => setNewAvailEnd(e.target.value)} />
+                                    </div>
+                                    <Button size="sm" className="h-8" onClick={addAvailability}>Add Slot</Button>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                     {editingTeacher.availability?.map((slot, idx) => (
+                                        <div key={idx} className="flex items-center justify-between p-2 rounded bg-muted text-xs">
+                                           <div className="flex items-center gap-2">
+                                              <CalendarIcon className="h-3 w-3" />
+                                              <span className="font-bold">{slot.day}</span>
+                                              <Clock className="h-3 w-3 ml-2" />
+                                              <span>{slot.startTime} - {slot.endTime}</span>
+                                           </div>
+                                           <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => removeAvailability(idx)}>
+                                              <X className="h-3 w-3" />
+                                           </Button>
+                                        </div>
+                                     ))}
                                   </div>
                                 </div>
                               </div>

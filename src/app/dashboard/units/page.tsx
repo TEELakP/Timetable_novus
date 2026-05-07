@@ -33,6 +33,8 @@ export default function UnitsPage() {
   const [newUnitDuration, setNewUnitDuration] = useState("2")
   const [newUnitSessions, setNewUnitSessions] = useState("1")
 
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null)
+
   const handleBulkAdd = () => {
     const lines = bulkInput.split('\n').filter(l => l.trim() !== "")
     lines.forEach((name, idx) => {
@@ -70,8 +72,16 @@ export default function UnitsPage() {
     toast({ title: "Unit Created", description: `${newUnitName} has been added to the catalog.` })
   }
 
+  const handleUpdateUnit = () => {
+    if (!editingUnit) return
+    setDocumentNonBlocking(doc(db, "academicUnits", editingUnit.id), editingUnit, { merge: true })
+    setEditingUnit(null)
+    toast({ title: "Unit Updated", description: `${editingUnit.name} has been updated.` })
+  }
+
   const handleDelete = (id: string) => {
     deleteDoc(doc(db, "academicUnits", id))
+    toast({ title: "Unit Deleted", description: "The unit has been removed." })
   }
 
   if (isLoading) {
@@ -244,9 +254,65 @@ export default function UnitsPage() {
                     <TableCell>{unit.sessionsPerWeek}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <Edit2 className="h-4 w-4" />
-                        </Button>
+                        <Dialog open={!!editingUnit && editingUnit.id === unit.id} onOpenChange={(open) => !open && setEditingUnit(null)}>
+                          <DialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingUnit(unit)}>
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Edit Academic Unit</DialogTitle>
+                            </DialogHeader>
+                            {editingUnit && (
+                              <div className="space-y-4 py-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-name">Unit Name</Label>
+                                  <Input 
+                                    id="edit-name" 
+                                    value={editingUnit.name}
+                                    onChange={(e) => setEditingUnit({...editingUnit, name: e.target.value})}
+                                  />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="edit-type">Type</Label>
+                                    <Select value={editingUnit.type} onValueChange={(value: any) => setEditingUnit({...editingUnit, type: value})}>
+                                      <SelectTrigger id="edit-type">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="theory">Theory</SelectItem>
+                                        <SelectItem value="practical">Practical</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="edit-duration">Duration (Hours)</Label>
+                                    <Input 
+                                      id="edit-duration" 
+                                      type="number" 
+                                      value={editingUnit.durationHours}
+                                      onChange={(e) => setEditingUnit({...editingUnit, durationHours: parseInt(e.target.value) || 0})}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-sessions">Sessions per Week</Label>
+                                  <Input 
+                                    id="edit-sessions" 
+                                    type="number" 
+                                    value={editingUnit.sessionsPerWeek}
+                                    onChange={(e) => setEditingUnit({...editingUnit, sessionsPerWeek: parseInt(e.target.value) || 0})}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                            <DialogFooter>
+                              <Button onClick={handleUpdateUnit}>Save Changes</Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(unit.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
