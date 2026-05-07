@@ -3,7 +3,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Calendar, Users, BookOpen, Settings, LayoutDashboard, DoorOpen } from "lucide-react"
+import { Calendar, Users, BookOpen, Settings, LayoutDashboard, DoorOpen, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const items = [
@@ -11,6 +11,11 @@ const items = [
     title: "Overview",
     url: "/dashboard/timetable",
     icon: LayoutDashboard,
+  },
+  {
+    title: "Conflicts",
+    url: "/dashboard/conflicts",
+    icon: AlertTriangle,
   },
   {
     title: "Teachers",
@@ -48,7 +53,7 @@ export function NavMain() {
             pathname === item.url ? "bg-muted text-primary" : "text-muted-foreground"
           )}
         >
-          <item.icon className="h-4 w-4" />
+          <item.icon className={cn("h-4 w-4", item.title === "Conflicts" && pathname !== item.url && "text-destructive")} />
           {item.title}
         </Link>
       ))}

@@ -5,7 +5,6 @@ import React, { useState, useMemo, useEffect } from "react"
 import { 
   ChevronLeft, 
   ChevronRight, 
-  AlertTriangle,
   Info,
   CheckCircle2,
   Users,
@@ -179,40 +178,6 @@ export default function TimetablePage() {
       setCurrentDayIndex((prev) => (prev - 1 + DAYS.length) % DAYS.length)
     }
   }
-
-  // Conflict Monitoring
-  const detectedConflicts = useMemo(() => {
-    const conflicts: string[] = []
-    if (!sessions || !teachers) return conflicts
-
-    const teacherUsage: Record<string, string[]> = {}
-    const roomUsage: Record<string, string[]> = {}
-
-    sessions.forEach(s => {
-      const start = parseInt(s.startTime.split(':')[0])
-      const end = parseInt(s.endTime.split(':')[0]) || 24
-      
-      for (let h = start; h < end; h++) {
-        const slotKey = `${s.day}-${h.toString().padStart(2, '0')}:00`
-        
-        if (!teacherUsage[s.teacherId]) teacherUsage[s.teacherId] = []
-        if (teacherUsage[s.teacherId].includes(slotKey)) {
-          const teacherName = teachers?.find(t => t.id === s.teacherId)?.name
-          const msg = `Teacher ${teacherName} double-booked at ${s.day} ${h}:00`
-          if (!conflicts.includes(msg)) conflicts.push(msg)
-        }
-        teacherUsage[s.teacherId].push(slotKey)
-
-        if (!roomUsage[s.room]) roomUsage[s.room] = []
-        if (roomUsage[s.room].includes(slotKey)) {
-          const msg = `Room ${s.room} busy at ${s.day} ${h}:00`
-          if (!conflicts.includes(msg)) conflicts.push(msg)
-        }
-        roomUsage[s.room].push(slotKey)
-      }
-    })
-    return conflicts
-  }, [sessions, teachers])
 
   const positionedSessions = useMemo(() => {
     const sorted = [...filteredSessions].sort((a, b) => a.startTime.localeCompare(b.startTime))
@@ -396,8 +361,8 @@ export default function TimetablePage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="lg:col-span-3">
+      <div className="grid grid-cols-1 gap-6">
+        <div className="lg:col-span-1">
           {viewMode === 'daily' ? (
             <Card className="overflow-hidden border-none shadow-xl bg-card/40 backdrop-blur-sm">
               <CardHeader className="bg-muted/30 pb-4 border-b">
@@ -616,62 +581,6 @@ export default function TimetablePage() {
               </CardContent>
             </Card>
           )}
-        </div>
-
-        <div className="space-y-6">
-          <Card className="shadow-lg border-none bg-gradient-to-br from-card to-muted/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg font-headline flex items-center gap-2">
-                <AlertTriangle className={cn("h-5 w-5", detectedConflicts.length > 0 ? "text-destructive" : "text-muted-foreground")} />
-                Conflict Monitor
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {detectedConflicts.length > 0 ? (
-                <div className="space-y-3">
-                  {detectedConflicts.map((conflict, idx) => (
-                    <div key={idx} className="p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-[10px] font-medium text-destructive flex gap-2">
-                      <AlertTriangle className="h-3 w-3 shrink-0" />
-                      {conflict}
-                    </div>
-                  ))}
-                </div>
-              ) : (sessions?.length || 0) > 0 ? (
-                <div className="flex flex-col items-center py-6 text-center space-y-2">
-                  <div className="p-3 rounded-full bg-green-500/10">
-                    <CheckCircle2 className="h-8 w-8 text-green-500" />
-                  </div>
-                  <p className="text-sm font-semibold">Integrity Verified</p>
-                  <p className="text-[10px] text-muted-foreground">All resource allocations are valid.</p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center py-6 text-center space-y-2 text-muted-foreground opacity-50">
-                  <Info className="h-8 w-8" />
-                  <p className="text-xs italic">No data scheduled.</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg border-none">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-headline">Session Audit</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-muted/50 p-3 rounded-lg">
-                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">Sessions</p>
-                  <p className="text-xl font-black">{viewMode === 'daily' ? filteredSessions.length : allFilteredSessions.length}</p>
-                </div>
-                <div className="bg-muted/50 p-3 rounded-lg">
-                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">Trainers</p>
-                  <p className="text-xl font-black">
-                    {new Set((viewMode === 'daily' ? filteredSessions : allFilteredSessions).map(s => s.teacherId)).size}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>
