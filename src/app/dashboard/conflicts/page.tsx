@@ -11,14 +11,13 @@ import {
   DoorOpen,
   CalendarDays,
   Clock,
-  ExternalLink,
-  CheckCircle,
   Filter,
   BookOpen,
-  Settings2,
   Trash2,
-  XCircle,
-  Ghost
+  AlertCircle,
+  TrendingUp,
+  Zap,
+  ArrowRight
 } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -35,9 +34,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc, writeBatch } from "firebase/firestore"
+import { collection, doc } from "firebase/firestore"
 import { TimetableEntry, Teacher, Unit, Room } from "@/lib/types"
-import { DAYS, CAMPUSES } from "@/lib/mock-data"
+import { DAYS } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 import { deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
@@ -55,7 +54,8 @@ import {
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 
 interface ConflictItem {
-  type: 'teacher' | 'room' | 'missing-resource'
+  level: 'low' | 'mid' | 'high'
+  type: string
   message: string
   details: string
   day: string
@@ -148,174 +148,197 @@ export default function ConflictsPage() {
   const { toast } = useToast()
   const db = useFirestore()
   const [selectedConflict, setSelectedConflict] = useState<ConflictItem | null>(null)
-  const [isPurging, setIsPurging] = useState(false)
-  const [isPurgeDialogOpen, setIsPurgeDialogOpen] = useState(false)
   
   const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
+  const roomsRef = useMemoFirebase(() => collection(db, "rooms"), [db])
   const sessionsRef = useMemoFirebase(() => collection(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions"), [db])
   
   const { data: teachers, isLoading: loadingTeachers } = useCollection<Teacher>(teachersRef)
   const { data: units, isLoading: loadingUnits } = useCollection<Unit>(unitsRef)
+  const { data: rooms, isLoading: loadingRooms } = useCollection<Room>(roomsRef)
   const { data: sessions, isLoading: loadingSessions } = useCollection<TimetableEntry>(sessionsRef)
 
-  // Filter state
   const [selectedDays, setSelectedDays] = useState<string[]>([])
-  const [selectedTeachers, setSelectedTeachers] = useState<string[]>([])
-  const [selectedUnits, setSelectedUnits] = useState<string[]>([])
+  const [selectedLevels, setSelectedLevels] = useState<string[]>([])
 
   const rawConflicts = useMemo(() => {
     const conflicts: ConflictItem[] = []
-    if (!sessions || !teachers) return conflicts
+    if (!sessions || !teachers || !units) return conflicts
 
-    const activeSessions = sessions.filter(s => !s.acknowledged)
     const teacherUsage: Record<string, { slot: string, sessionId: string }[]> = {}
     const roomUsage: Record<string, { slot: string, sessionId: string }[]> = {}
+    const unitMergeCheck: Record<string, { day: string, startTime: string, room: string, sessionId: string }[]> = {}
 
-    activeSessions.forEach(s => {
-      const isInvalidTeacher = !s.teacherId || 
-                             s.teacherId.toLowerCase().includes('unassigned') || 
-                             s.teacherId.toLowerCase().includes('n/a') || 
-                             s.teacherId.toLowerCase().includes('unknown') ||
-                             s.teacherId.trim() === ''
-      
-      const isInvalidUnit = !s.unitId || 
-                           s.unitId.toLowerCase().includes('unassigned') || 
-                           s.unitId.toLowerCase().includes('n/a') || 
-                           s.unitId.toLowerCase().includes('unknown') ||
-                           s.unitId.trim() === ''
-
+    sessions.forEach(s => {
       const teacher = teachers.find(t => t.id === s.teacherId)
-      const unit = units?.find(u => u.id === s.unitId)
-      
-      // 1. Detect Missing/Placeholder Resources (Phantoms)
-      if (isInvalidTeacher || !teacher || isInvalidUnit || !unit) {
-        let msg = "Phantom Session Detected"
-        if (isInvalidTeacher || !teacher) msg = "Unassigned Trainer"
-        if (isInvalidUnit || !unit) msg = "Unknown Subject Entry"
-        if ((isInvalidTeacher || !teacher) && (isInvalidUnit || !unit)) msg = "Corrupt Schedule Entry"
+      const unit = units.find(u => u.id === s.unitId)
+      const room = rooms?.find(r => r.name === s.room && r.campus === s.campus)
 
+      // --- HIGH LEVEL CONFLICTS ---
+
+      // 1. Trainer Qualification Check
+      if (teacher && unit && !teacher.qualifiedUnits.includes(unit.id)) {
         conflicts.push({
-          type: 'missing-resource',
-          message: msg,
-          details: `This session involves an invalid or placeholder reference. Subject: "${unit?.name || s.unitId || 'Unknown'}", Trainer: "${teacher?.name || s.teacherId || 'Unknown'}". It is hidden from Overview.`,
+          level: 'high',
+          type: 'Qualification Mismatch',
+          message: `${teacher.name} is not qualified for ${unit.name}`,
+          details: `Institutional safety rule: Trainers must be certified for the specific unit code they deliver.`,
           day: s.day,
           time: s.startTime,
           involvedSessionIds: [s.id],
-          unitIds: [s.unitId]
+          teacherId: s.teacherId,
+          unitIds: [unit.id]
         })
       }
 
-      // 2. Detect Overlaps (Double Booking)
-      const start = parseInt(s.startTime.split(':')[0])
-      const end = parseInt(s.endTime.split(':')[0]) || 24
+      // 2. Trainer Availability (JotForm) Check
+      if (teacher && teacher.availability.length > 0) {
+        const dayAvail = teacher.availability.filter(a => a.day === s.day)
+        const isAvailable = dayAvail.some(a => s.startTime >= a.startTime && s.endTime <= a.endTime)
+        if (!isAvailable) {
+          conflicts.push({
+            level: 'high',
+            type: 'Availability Breach',
+            message: `${teacher.name} scheduled outside availability`,
+            details: `Conflict with trainer's submitted availability blocks for ${s.day}.`,
+            day: s.day,
+            time: s.startTime,
+            involvedSessionIds: [s.id],
+            teacherId: s.teacherId,
+            unitIds: [s.unitId]
+          })
+        }
+      }
+
+      // 3. Double Booking Detection (Trainer & Room)
+      const startH = parseInt(s.startTime.split(':')[0])
+      const endH = parseInt(s.endTime.split(':')[0]) || 24
       
-      for (let h = start; h < end; h++) {
+      for (let h = startH; h < endH; h++) {
         const slotKey = `${s.day}-${h.toString().padStart(2, '0')}:00`
         
-        if (s.teacherId && !isInvalidTeacher && teacher) {
+        // Trainer Overlap
+        if (s.teacherId) {
           if (!teacherUsage[s.teacherId]) teacherUsage[s.teacherId] = []
-          const existingTeacherSlot = teacherUsage[s.teacherId].find(u => u.slot === slotKey)
-          
-          if (existingTeacherSlot) {
-            const msg = `Teacher ${teacher?.name || 'Unknown'} is double-booked`
-            const exists = conflicts.find(c => c.message === msg && c.day === s.day && c.time === `${h}:00`)
-            
-            if (!exists) {
-              conflicts.push({
-                type: 'teacher',
-                message: msg,
-                details: `Trainer "${teacher?.name}" has multiple classes assigned at the same time.`,
-                day: s.day,
-                time: `${h}:00`,
-                involvedSessionIds: [existingTeacherSlot.sessionId, s.id],
-                teacherId: s.teacherId,
-                unitIds: [s.unitId]
-              })
-            } else {
-              if (!exists.involvedSessionIds.includes(s.id)) exists.involvedSessionIds.push(s.id)
-              if (!exists.unitIds.includes(s.unitId)) exists.unitIds.push(s.unitId)
-            }
+          const existing = teacherUsage[s.teacherId].find(u => u.slot === slotKey)
+          if (existing) {
+            conflicts.push({
+              level: 'high',
+              type: 'Trainer Overlap',
+              message: `${teacher?.name || s.teacherId} is double-booked`,
+              details: `Trainer is scheduled for multiple classes simultaneously. Legally, a trainer can only be in one place at one time.`,
+              day: s.day,
+              time: `${h}:00`,
+              involvedSessionIds: [existing.sessionId, s.id],
+              teacherId: s.teacherId,
+              unitIds: [s.unitId]
+            })
           }
           teacherUsage[s.teacherId].push({ slot: slotKey, sessionId: s.id })
         }
 
+        // Room Overlap
         if (s.room && s.room !== "Online") {
-          if (!roomUsage[s.room]) roomUsage[s.room] = []
-          const existingRoomSlot = roomUsage[s.room].find(u => u.slot === slotKey)
-          
-          if (existingRoomSlot) {
-            const msg = `Room ${s.room} is double-booked`
-            const exists = conflicts.find(c => c.message === msg && c.day === s.day && c.time === `${h}:00`)
-            
-            if (!exists) {
-              conflicts.push({
-                type: 'room',
-                message: msg,
-                details: `Physical room capacity conflict detected at ${s.room}.`,
-                day: s.day,
-                time: `${h}:00`,
-                involvedSessionIds: [existingRoomSlot.sessionId, s.id],
-                unitIds: [s.unitId]
-              })
-            } else {
-              if (!exists.involvedSessionIds.includes(s.id)) exists.involvedSessionIds.push(s.id)
-              if (!exists.unitIds.includes(s.unitId)) exists.unitIds.push(s.unitId)
-            }
+          const roomKey = `${s.campus}-${s.room}`
+          if (!roomUsage[roomKey]) roomUsage[roomKey] = []
+          const existing = roomUsage[roomKey].find(u => u.slot === slotKey)
+          if (existing) {
+            conflicts.push({
+              level: 'high',
+              type: 'Room Overlap',
+              message: `${s.room} is double-booked`,
+              details: `Physical capacity conflict. Only one class can feasibly run in ${s.room} at any given time.`,
+              day: s.day,
+              time: `${h}:00`,
+              involvedSessionIds: [existing.sessionId, s.id],
+              unitIds: [s.unitId]
+            })
           }
-          roomUsage[s.room].push({ slot: slotKey, sessionId: s.id })
+          roomUsage[roomKey].push({ slot: slotKey, sessionId: s.id })
         }
       }
+
+      // --- MID LEVEL CONFLICTS ---
+
+      // 4. Gosford After-Hours Rule
+      if (s.campus === 'Gosford') {
+        const finishH = parseInt(s.endTime.split(':')[0])
+        if (finishH >= 17) {
+          conflicts.push({
+            level: 'mid',
+            type: 'Institutional Constraint',
+            message: `Gosford class ends after 5:00 PM`,
+            details: `Buses in Gosford stop at 5pm. Institutional rule requires classes to finish earlier for student safety.`,
+            day: s.day,
+            time: s.startTime,
+            involvedSessionIds: [s.id],
+            unitIds: [s.unitId]
+          })
+        }
+      }
+
+      // 5. Capacity vs Type Check
+      if (room && unit) {
+        if (unit.type === 'theory' && room.capacity > 30) {
+           // Info: Room might be too big or students might be spread too thin
+        } else if (unit.type === 'theory' && room.capacity < 15) {
+          conflicts.push({
+            level: 'mid',
+            type: 'Capacity Warning',
+            message: `Room ${s.room} might be too small for Theory`,
+            details: `Standard Theory classes aim for 30 students. This room only holds ${room.capacity}.`,
+            day: s.day,
+            time: s.startTime,
+            involvedSessionIds: [s.id],
+            unitIds: [s.unitId]
+          })
+        }
+        
+        if (unit.type === 'practical' && room.type !== 'Workshop') {
+          conflicts.push({
+            level: 'mid',
+            type: 'Equipment Mismatch',
+            message: `Practical unit in Theory classroom`,
+            details: `Practical units like Kitchen Management require specialized Workshop/Kitchen facilities.`,
+            day: s.day,
+            time: s.startTime,
+            involvedSessionIds: [s.id],
+            unitIds: [s.unitId]
+          })
+        }
+      }
+
+      // --- LOW LEVEL CONFLICTS ---
+
+      // 6. Merge Opportunity Check
+      const mergeKey = `${unit?.id}-${s.day}-${s.startTime}`
+      if (!unitMergeCheck[mergeKey]) unitMergeCheck[mergeKey] = []
+      const potentialMerge = unitMergeCheck[mergeKey].find(m => m.room !== s.room)
+      if (potentialMerge) {
+        conflicts.push({
+          level: 'low',
+          type: 'Resource Optimization',
+          message: `Potential Unit Merge: ${unit?.name}`,
+          details: `Same unit is running in different rooms at the same time. Consider merging batches to save trainer hours if student count allows.`,
+          day: s.day,
+          time: s.startTime,
+          involvedSessionIds: [potentialMerge.sessionId, s.id],
+          unitIds: [s.unitId]
+        })
+      }
+      unitMergeCheck[mergeKey].push({ day: s.day, startTime: s.startTime, room: s.room, sessionId: s.id })
     })
+
     return conflicts
-  }, [sessions, teachers, units])
+  }, [sessions, teachers, units, rooms])
 
   const filteredConflicts = useMemo(() => {
     let data = [...rawConflicts]
     if (selectedDays.length > 0) data = data.filter(c => selectedDays.includes(c.day))
-    if (selectedTeachers.length > 0) data = data.filter(c => c.teacherId && selectedTeachers.includes(c.teacherId))
-    if (selectedUnits.length > 0) data = data.filter(c => c.unitIds.some(u => selectedUnits.includes(u)))
+    if (selectedLevels.length > 0) data = data.filter(c => selectedLevels.includes(c.level))
     return data
-  }, [rawConflicts, selectedDays, selectedTeachers, selectedUnits])
-
-  const handlePurgeUnassigned = async () => {
-    if (!sessions) return
-    setIsPurging(true)
-    const batch = writeBatch(db)
-    
-    const invalidSessions = sessions.filter(s => {
-      const isInvalidTeacher = !s.teacherId || 
-                             s.teacherId.toLowerCase().includes('unassigned') || 
-                             s.teacherId.toLowerCase().includes('n/a') || 
-                             s.teacherId.toLowerCase().includes('unknown') ||
-                             s.teacherId.trim() === ''
-      
-      const isInvalidUnit = !s.unitId || 
-                           s.unitId.toLowerCase().includes('unassigned') || 
-                           s.unitId.toLowerCase().includes('n/a') || 
-                           s.unitId.toLowerCase().includes('unknown') ||
-                           s.unitId.trim() === ''
-
-      const teacher = teachers?.find(t => t.id === s.teacherId)
-      const unit = units?.find(u => u.id === s.unitId)
-
-      return isInvalidTeacher || !teacher || isInvalidUnit || !unit
-    })
-
-    try {
-      invalidSessions.forEach(s => {
-        const ref = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id)
-        batch.delete(ref)
-      })
-      await batch.commit()
-      toast({ title: "Purge Complete", description: `Permanently removed ${invalidSessions.length} invalid entries.` })
-    } catch (e) {
-      toast({ variant: "destructive", title: "Purge Failed" })
-    } finally {
-      setIsPurging(false)
-      setIsPurgeDialogOpen(false)
-    }
-  }
+  }, [rawConflicts, selectedDays, selectedLevels])
 
   const handleDeleteConflictSessions = () => {
     if (!selectedConflict) return
@@ -335,26 +358,13 @@ export default function ConflictsPage() {
     )
   }
 
-  const unassignedCount = rawConflicts.filter(c => c.type === 'missing-resource').length
-
   return (
     <div className="flex-1 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Conflict Monitor</h2>
-          <p className="text-muted-foreground text-sm">Review resource integrity and remove overlapping or unassigned schedules.</p>
+          <p className="text-muted-foreground text-sm">3-Level Audit: High (Blockers), Mid (Operational), Low (Optimization).</p>
         </div>
-        {unassignedCount > 0 && (
-          <Button 
-            variant="destructive" 
-            size="sm" 
-            onClick={() => setIsPurgeDialogOpen(true)}
-            disabled={isPurging}
-          >
-            {isPurging ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ghost className="mr-2 h-4 w-4" />}
-            Purge {unassignedCount} Phantom Entries
-          </Button>
-        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3 bg-muted/30 p-4 rounded-xl border border-border/50">
@@ -364,6 +374,18 @@ export default function ConflictsPage() {
         </div>
         
         <MultiSelectFilter 
+          label="Severity"
+          icon={AlertTriangle}
+          options={[
+            { label: 'High (Critical)', value: 'high' },
+            { label: 'Mid (Warnings)', value: 'mid' },
+            { label: 'Low (Optimizations)', value: 'low' }
+          ]}
+          selected={selectedLevels}
+          onChange={setSelectedLevels}
+        />
+
+        <MultiSelectFilter 
           label="Days"
           icon={CalendarDays}
           options={DAYS.map(d => ({ label: d, value: d }))}
@@ -371,28 +393,12 @@ export default function ConflictsPage() {
           onChange={setSelectedDays}
         />
 
-        <MultiSelectFilter 
-          label="Trainers"
-          icon={UserIcon}
-          options={teachers?.sort((a,b) => a.name.localeCompare(b.name)).map(t => ({ label: t.name, value: t.id })) || []}
-          selected={selectedTeachers}
-          onChange={setSelectedTeachers}
-        />
-
-        <MultiSelectFilter 
-          label="Subjects"
-          icon={BookOpen}
-          options={units?.sort((a,b) => a.name.localeCompare(b.name)).map(u => ({ label: u.name, value: u.id })) || []}
-          selected={selectedUnits}
-          onChange={setSelectedUnits}
-        />
-
-        {(selectedDays.length > 0 || selectedTeachers.length > 0 || selectedUnits.length > 0) && (
+        {(selectedDays.length > 0 || selectedLevels.length > 0) && (
           <Button 
             variant="ghost" 
             size="sm" 
             className="h-8 text-[10px] font-bold uppercase text-primary/60"
-            onClick={() => { setSelectedDays([]); setSelectedTeachers([]); setSelectedUnits([]); }}
+            onClick={() => { setSelectedDays([]); setSelectedLevels([]); }}
           >
             Clear All
           </Button>
@@ -400,113 +406,117 @@ export default function ConflictsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle className="font-headline flex items-center gap-2">
-              <AlertTriangle className={filteredConflicts.length > 0 ? "text-destructive" : "text-muted-foreground"} />
-              Active Conflicts ({filteredConflicts.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {filteredConflicts.length > 0 ? (
-              <div className="grid gap-4">
-                {filteredConflicts.map((conflict, idx) => (
-                  <button 
-                    key={idx} 
-                    onClick={() => setSelectedConflict(conflict)}
-                    className={cn(
-                      "w-full text-left flex flex-col md:flex-row gap-4 p-4 rounded-xl border items-start hover:bg-destructive/10 transition-colors group",
-                      conflict.type === 'missing-resource' ? "border-orange-200 bg-orange-50" : "border-destructive/20 bg-destructive/5"
-                    )}
-                  >
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className={cn("font-bold", conflict.type === 'missing-resource' ? "text-orange-600" : "text-destructive")}>
-                          {conflict.message}
-                        </span>
-                        <Badge variant="outline" className="text-[10px] uppercase font-black bg-white/50">{conflict.type}</Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{conflict.details}</p>
-                      <div className="flex items-center gap-4 pt-2">
-                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-                            <CalendarDays className="h-3.5 w-3.5" />
-                            {conflict.day}
-                         </div>
-                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-                            <Clock className="h-3.5 w-3.5" />
-                            {conflict.time}
-                         </div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-24 text-center space-y-4 border-2 border-dashed rounded-xl">
-                 <CheckCircle2 className="h-12 w-12 text-green-500" />
-                 <h3 className="text-xl font-bold">No Active Conflicts</h3>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <div className="md:col-span-2 space-y-6">
+          {/* HIGH LEVEL */}
+          {(selectedLevels.length === 0 || selectedLevels.includes('high')) && (
+            <div className="space-y-4">
+               <h3 className="text-sm font-black uppercase tracking-widest text-destructive flex items-center gap-2">
+                 <Zap className="h-4 w-4 fill-destructive" /> Critical Blockers (High)
+               </h3>
+               <div className="grid gap-3">
+                 {filteredConflicts.filter(c => c.level === 'high').map((c, i) => (
+                   <ConflictCard key={i} conflict={c} onSelect={setSelectedConflict} />
+                 ))}
+                 {filteredConflicts.filter(c => c.level === 'high').length === 0 && (
+                   <div className="p-8 text-center border-2 border-dashed rounded-xl opacity-40 italic text-sm">No critical blockers found.</div>
+                 )}
+               </div>
+            </div>
+          )}
 
-        <Card className="bg-primary text-primary-foreground h-fit">
-           <CardHeader><CardTitle className="text-lg">Audit Status</CardTitle></CardHeader>
-           <CardContent className="space-y-4">
-              <div className="flex justify-between items-center border-b border-primary-foreground/20 pb-2">
-                 <span className="text-xs opacity-80 uppercase">Sessions</span>
-                 <span className="text-xl font-black">{sessions?.length || 0}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                 <span className="text-xs opacity-80 uppercase">Open Conflicts</span>
-                 <span className={cn("text-xl font-black", filteredConflicts.length > 0 ? "text-yellow-400" : "text-green-400")}>
-                    {filteredConflicts.length}
-                 </span>
-              </div>
-           </CardContent>
-        </Card>
+          {/* MID LEVEL */}
+          {(selectedLevels.length === 0 || selectedLevels.includes('mid')) && (
+            <div className="space-y-4">
+               <h3 className="text-sm font-black uppercase tracking-widest text-orange-600 flex items-center gap-2">
+                 <AlertCircle className="h-4 w-4 fill-orange-600" /> Operational Risks (Mid)
+               </h3>
+               <div className="grid gap-3">
+                 {filteredConflicts.filter(c => c.level === 'mid').map((c, i) => (
+                   <ConflictCard key={i} conflict={c} onSelect={setSelectedConflict} />
+                 ))}
+                 {filteredConflicts.filter(c => c.level === 'mid').length === 0 && (
+                   <div className="p-8 text-center border-2 border-dashed rounded-xl opacity-40 italic text-sm">No operational warnings.</div>
+                 )}
+               </div>
+            </div>
+          )}
+
+          {/* LOW LEVEL */}
+          {(selectedLevels.length === 0 || selectedLevels.includes('low')) && (
+            <div className="space-y-4">
+               <h3 className="text-sm font-black uppercase tracking-widest text-blue-600 flex items-center gap-2">
+                 <TrendingUp className="h-4 w-4" /> Optimizations (Low)
+               </h3>
+               <div className="grid gap-3">
+                 {filteredConflicts.filter(c => c.level === 'low').map((c, i) => (
+                   <ConflictCard key={i} conflict={c} onSelect={setSelectedConflict} />
+                 ))}
+                 {filteredConflicts.filter(c => c.level === 'low').length === 0 && (
+                   <div className="p-8 text-center border-2 border-dashed rounded-xl opacity-40 italic text-sm">No optimization suggestions.</div>
+                 )}
+               </div>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-6">
+          <Card className="bg-primary text-primary-foreground">
+             <CardHeader><CardTitle className="text-lg">Audit Overview</CardTitle></CardHeader>
+             <CardContent className="space-y-4">
+                <div className="flex justify-between items-center border-b border-primary-foreground/20 pb-2">
+                   <span className="text-xs opacity-80 uppercase font-bold">Blockers</span>
+                   <span className="text-xl font-black text-destructive-foreground">{rawConflicts.filter(c => c.level === 'high').length}</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-primary-foreground/20 pb-2">
+                   <span className="text-xs opacity-80 uppercase font-bold">Warnings</span>
+                   <span className="text-xl font-black text-orange-300">{rawConflicts.filter(c => c.level === 'mid').length}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                   <span className="text-xs opacity-80 uppercase font-bold">Optimizations</span>
+                   <span className="text-xl font-black text-blue-300">{rawConflicts.filter(c => c.level === 'low').length}</span>
+                </div>
+             </CardContent>
+          </Card>
+
+          <Card className="bg-muted/50">
+             <CardHeader>
+               <CardTitle className="text-sm flex items-center gap-2">
+                 <Info className="h-4 w-4" /> Policy Reference
+               </CardTitle>
+             </CardHeader>
+             <CardContent className="text-[11px] space-y-2 text-muted-foreground leading-relaxed">
+               <p><strong>Gosford:</strong> No classes after 5 PM due to local bus limitations.</p>
+               <p><strong>Capacity:</strong> Theory classes limited to 30. Practical classes limited to 20.</p>
+               <p><strong>Fast Track:</strong> Overlaps strictly monitored for dual-enrolled students.</p>
+               <p><strong>Staffing:</strong> Maximize hours for FT employees (Shaffy, Manjit exceptions).</p>
+             </CardContent>
+          </Card>
+        </div>
       </div>
 
-      <AlertDialog open={isPurgeDialogOpen} onOpenChange={setIsPurgeDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Purge All Invalid Entries?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete {unassignedCount} sessions that are missing valid subject or trainer assignments. This includes "Unknown", "N/A", and "Unassigned" entries. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handlePurgeUnassigned} className="bg-destructive text-destructive-foreground">
-              Confirm Purge
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       <Dialog open={!!selectedConflict} onOpenChange={(open) => !open && setSelectedConflict(null)}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-              Conflict Detail
-            </DialogTitle>
+            <div className="flex items-center gap-3 mb-2">
+              <SeverityIcon level={selectedConflict?.level} />
+              <DialogTitle className="text-xl">{selectedConflict?.type}</DialogTitle>
+            </div>
+            <DialogDescription className="text-base font-medium text-foreground">
+              {selectedConflict?.message}
+            </DialogDescription>
           </DialogHeader>
           <div className="py-4 space-y-4">
-            <div className="text-sm text-muted-foreground">
-              {selectedConflict?.details}
+            <div className="p-4 bg-muted rounded-xl text-sm border">
+               <h4 className="font-black text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Technical Details</h4>
+               {selectedConflict?.details}
             </div>
-            <div className="bg-muted p-3 rounded-lg text-xs space-y-1">
-              <p className="font-bold uppercase tracking-tight text-[10px] text-muted-foreground">Sessions Involved:</p>
-              {selectedConflict?.involvedSessionIds.map(sid => (
-                <div key={sid} className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[9px]">{sid}</Badge>
-                </div>
-              ))}
+            <div className="flex items-center justify-between text-xs font-bold text-muted-foreground bg-muted/30 p-3 rounded-lg border-dashed border">
+               <div className="flex items-center gap-2"><CalendarDays className="h-4 w-4" /> {selectedConflict?.day}</div>
+               <div className="flex items-center gap-2"><Clock className="h-4 w-4" /> {selectedConflict?.time}</div>
             </div>
           </div>
           <DialogFooter className="flex-col gap-2 sm:flex-row">
-            <Button variant="outline" onClick={() => setSelectedConflict(null)}>Close</Button>
+            <Button variant="outline" onClick={() => setSelectedConflict(null)}>Dismiss</Button>
             <Button variant="destructive" onClick={handleDeleteConflictSessions}>
               <Trash2 className="mr-2 h-4 w-4" /> Delete Involved Sessions
             </Button>
@@ -515,4 +525,50 @@ export default function ConflictsPage() {
       </Dialog>
     </div>
   )
+}
+
+function ConflictCard({ conflict, onSelect }: { conflict: ConflictItem, onSelect: (c: ConflictItem) => void }) {
+  const levelColors = {
+    high: "border-destructive/30 bg-destructive/5 hover:bg-destructive/10",
+    mid: "border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10",
+    low: "border-blue-500/30 bg-blue-500/5 hover:bg-blue-500/10"
+  }
+
+  return (
+    <button 
+      onClick={() => onSelect(conflict)}
+      className={cn(
+        "w-full text-left p-4 rounded-xl border transition-all group flex gap-4 items-center",
+        levelColors[conflict.level]
+      )}
+    >
+      <div className="flex-1 space-y-1">
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            "text-xs font-black uppercase tracking-tighter",
+            conflict.level === 'high' ? "text-destructive" : conflict.level === 'mid' ? "text-orange-700" : "text-blue-700"
+          )}>
+            {conflict.type}
+          </span>
+          <Separator orientation="vertical" className="h-3" />
+          <span className="text-sm font-bold">{conflict.message}</span>
+        </div>
+        <div className="flex items-center gap-4 pt-1 opacity-70">
+           <div className="flex items-center gap-1.5 text-[10px] font-black uppercase">
+              <CalendarDays className="h-3 w-3" /> {conflict.day}
+           </div>
+           <div className="flex items-center gap-1.5 text-[10px] font-black uppercase">
+              <Clock className="h-3 w-3" /> {conflict.time}
+           </div>
+        </div>
+      </div>
+      <ArrowRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+    </button>
+  )
+}
+
+function SeverityIcon({ level }: { level?: string }) {
+  if (level === 'high') return <Zap className="h-6 w-6 text-destructive fill-destructive" />
+  if (level === 'mid') return <AlertCircle className="h-6 w-6 text-orange-600 fill-orange-600" />
+  return <TrendingUp className="h-6 w-6 text-blue-600" />
 }
