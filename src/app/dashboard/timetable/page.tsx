@@ -15,11 +15,20 @@ import {
   Clock,
   AlertTriangle,
   MapPin,
-  Settings2
+  Settings2,
+  Edit2,
+  Info
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogFooter,
+  DialogDescription 
+} from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -44,7 +53,7 @@ import { TimetableEntry, Teacher, Unit, Room, Day, Campus } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, writeBatch } from "firebase/firestore"
-import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { cn } from "@/lib/utils"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
@@ -157,6 +166,7 @@ export default function TimetablePage() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
 
   const [isAddSessionOpen, setIsAddSessionOpen] = useState(false)
+  const [editingSession, setEditingSession] = useState<TimetableEntry | null>(null)
   const [newSession, setNewSession] = useState({
     unitId: "",
     teacherId: "",
@@ -208,6 +218,14 @@ export default function TimetablePage() {
     setDocumentNonBlocking(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", id), sessionData, { merge: true })
     setIsAddSessionOpen(false)
     toast({ title: "Session Added" })
+  }
+
+  const handleUpdateSession = () => {
+    if (!editingSession) return
+    const sessionRef = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", editingSession.id)
+    updateDocumentNonBlocking(sessionRef, editingSession)
+    setEditingSession(null)
+    toast({ title: "Session Updated", description: "The class details have been saved." })
   }
 
   const handleDeleteSession = (id: string) => {
@@ -317,7 +335,8 @@ export default function TimetablePage() {
                         return (
                           <div 
                             key={session.id} 
-                            className="p-2 rounded-lg border shadow-sm group relative flex flex-col leading-tight bg-blue-600/5 border-blue-200"
+                            onClick={() => setEditingSession(session)}
+                            className="p-2 rounded-lg border shadow-sm group relative flex flex-col leading-tight bg-blue-600/5 border-blue-200 cursor-pointer hover:bg-blue-600/10 transition-colors"
                           >
                             <div className="flex flex-wrap items-center gap-x-1 mb-1">
                               <span className="text-[11px] font-black uppercase truncate max-w-full text-blue-900">
@@ -338,7 +357,10 @@ export default function TimetablePage() {
                               variant="ghost" 
                               size="icon" 
                               className="h-5 w-5 absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={() => setSessionToDelete(session.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSessionToDelete(session.id);
+                              }}
                             >
                                <Trash2 className="h-3 w-3" />
                             </Button>
@@ -380,14 +402,24 @@ export default function TimetablePage() {
                            <Badge variant="secondary" className="text-[10px] font-black">{session.room}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100"
-                            onClick={() => setSessionToDelete(session.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              onClick={() => setEditingSession(session)}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-destructive"
+                              onClick={() => setSessionToDelete(session.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     )
@@ -416,6 +448,7 @@ export default function TimetablePage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Add Manual Session Dialog */}
       <Dialog open={isAddSessionOpen} onOpenChange={setIsAddSessionOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader><DialogTitle>Add Manual Session</DialogTitle></DialogHeader>
@@ -497,6 +530,112 @@ export default function TimetablePage() {
             </div>
           </div>
           <DialogFooter><Button onClick={handleAddSession}>Save Session</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Session Dialog */}
+      <Dialog open={!!editingSession} onOpenChange={(open) => !open && setEditingSession(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Class Details</DialogTitle>
+            <DialogDescription>View or adjust session parameters.</DialogDescription>
+          </DialogHeader>
+          {editingSession && (
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Academic Unit (Class)</Label>
+                <Select value={editingSession.unitId} onValueChange={(v) => setEditingSession({...editingSession, unitId: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {units?.sort((a,b) => a.name.localeCompare(b.name)).map(u => (
+                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Trainer</Label>
+                <Select value={editingSession.teacherId} onValueChange={(v) => setEditingSession({...editingSession, teacherId: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {teachers?.sort((a,b) => a.name.localeCompare(b.name)).map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Campus</Label>
+                  <Select 
+                    value={editingSession.campus} 
+                    onValueChange={(v: Campus) => setEditingSession({...editingSession, campus: v, room: "", location: ""})}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Room</Label>
+                  <Select 
+                    value={editingSession.room} 
+                    onValueChange={(v) => {
+                      const selectedRoom = rooms?.find(r => r.name === v && r.campus === editingSession.campus)
+                      setEditingSession({...editingSession, room: v, location: selectedRoom?.address || ""})
+                    }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select Room" /></SelectTrigger>
+                    <SelectContent>
+                      {rooms?.filter(r => r.campus === editingSession.campus).sort((a,b) => a.name.localeCompare(b.name)).map(r => (
+                        <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Day</Label>
+                  <Select value={editingSession.day} onValueChange={(v: Day) => setEditingSession({...editingSession, day: v})}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Timespan</Label>
+                  <div className="flex items-center gap-1">
+                    <Input type="time" className="h-8 text-xs" value={editingSession.startTime} onChange={e => setEditingSession({...editingSession, startTime: e.target.value})} />
+                    <span className="text-xs">-</span>
+                    <Input type="time" className="h-8 text-xs" value={editingSession.endTime} onChange={e => setEditingSession({...editingSession, endTime: e.target.value})} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-muted/50 p-3 rounded-lg border border-dashed flex flex-col gap-1">
+                 <div className="flex items-center gap-2 text-[10px] font-black uppercase text-muted-foreground">
+                    <MapPin className="h-3 w-3" /> Location Address
+                 </div>
+                 <p className="text-[11px] font-medium leading-tight">
+                    {editingSession.location || "Automatic based on room selection"}
+                 </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" className="text-destructive hover:bg-destructive/10" onClick={() => {
+              if (editingSession) setSessionToDelete(editingSession.id);
+              setEditingSession(null);
+            }}>
+              <Trash2 className="mr-2 h-4 w-4" /> Delete
+            </Button>
+            <Button onClick={handleUpdateSession}>Save Changes</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
