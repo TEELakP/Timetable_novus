@@ -158,10 +158,7 @@ export default function ConflictsPage() {
     const conflicts: ConflictItem[] = []
     if (!sessions || !teachers || !units) return conflicts
 
-    // Use a Set to avoid duplicate conflicts between the same two sessions
     const addedConflictIds = new Set<string>()
-
-    // Filter out sessions that have already been acknowledged
     const activeSessions = sessions.filter(s => !s.acknowledged)
 
     const teacherUsage: Record<string, { slot: string, sessionId: string }[]> = {}
@@ -205,9 +202,9 @@ export default function ConflictsPage() {
         // Trainer Overlap
         if (s.teacherId) {
           if (!teacherUsage[s.teacherId]) teacherUsage[s.teacherId] = []
-          const existing = teacherUsage[s.teacherId].find(u => u.slot === slotKey)
-          if (existing) {
-            // Sort IDs to ensure consistency A-B vs B-A
+          const overlaps = teacherUsage[s.teacherId].filter(u => u.slot === slotKey && u.sessionId !== s.id)
+          
+          overlaps.forEach(existing => {
             const conflictId = `overlap-t-${[s.id, existing.sessionId].sort().join('-')}`
             if (!addedConflictIds.has(conflictId)) {
               conflicts.push({
@@ -223,7 +220,7 @@ export default function ConflictsPage() {
               })
               addedConflictIds.add(conflictId)
             }
-          }
+          })
           teacherUsage[s.teacherId].push({ slot: slotKey, sessionId: s.id })
         }
 
@@ -231,8 +228,9 @@ export default function ConflictsPage() {
         if (s.room && s.room !== "Online") {
           const roomKey = `${s.campus}-${s.room}`
           if (!roomUsage[roomKey]) roomUsage[roomKey] = []
-          const existing = roomUsage[roomKey].find(u => u.slot === slotKey)
-          if (existing) {
+          const overlaps = roomUsage[roomKey].filter(u => u.slot === slotKey && u.sessionId !== s.id)
+          
+          overlaps.forEach(existing => {
             const conflictId = `overlap-r-${[s.id, existing.sessionId].sort().join('-')}`
             if (!addedConflictIds.has(conflictId)) {
               conflicts.push({
@@ -247,7 +245,7 @@ export default function ConflictsPage() {
               })
               addedConflictIds.add(conflictId)
             }
-          }
+          })
           roomUsage[roomKey].push({ slot: slotKey, sessionId: s.id })
         }
       }
@@ -277,15 +275,17 @@ export default function ConflictsPage() {
 
       // 4. Capacity vs Type Check
       if (room && unit) {
-        if (unit.type === 'theory' && room.capacity < 15) {
+        const isPractical = unit.type === 'practical'
+        const limit = isPractical ? 20 : 30
+        if (room.capacity < limit) {
           const cid = `cap-${s.id}`
           if (!addedConflictIds.has(cid)) {
             conflicts.push({
               id: cid,
               level: 'mid',
               type: 'Capacity Warning',
-              message: `Room ${s.room} might be too small for Theory`,
-              details: `Standard Theory classes aim for 30 students. This room only holds ${room.capacity}.`,
+              message: `Room ${s.room} might be too small`,
+              details: `${unit.type.toUpperCase()} classes aim for ${limit} students. This room only holds ${room.capacity}.`,
               day: s.day,
               time: s.startTime,
               involvedSessionIds: [s.id]
@@ -410,7 +410,6 @@ export default function ConflictsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-6">
-          {/* SECTIONS FOR EACH LEVEL */}
           {['high', 'mid', 'low'].map((level) => {
             if (selectedLevels.length > 0 && !selectedLevels.includes(level)) return null
             const items = filteredConflicts.filter(c => c.level === level)
@@ -490,7 +489,6 @@ export default function ConflictsPage() {
                {selectedConflict?.details}
             </div>
 
-            {/* Double Booking Detailed View */}
             {selectedConflict?.involvedSessionIds && selectedConflict.involvedSessionIds.length > 1 && (
               <div className="space-y-2">
                 <h4 className="font-black text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Conflicting Sessions:</h4>
