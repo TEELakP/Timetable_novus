@@ -14,7 +14,8 @@ import {
   Code2,
   FileSpreadsheet,
   Save,
-  FileJson
+  FileJson,
+  Zap
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,7 +24,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
+import { useFirestore, useCollection, useMemoFirebase, useUser } from "@/firebase"
 import { collection, doc, writeBatch, getDocs, query, limit } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { Campus, Day, Teacher, Unit, Room, TimetableEntry, RoomType } from "@/lib/types"
@@ -87,6 +88,7 @@ type EntityType = 'teachers' | 'academicUnits' | 'rooms' | 'sessions' | 'rules'
 export default function DataEntryPage() {
   const { toast } = useToast()
   const db = useFirestore()
+  const { user, isUserLoading } = useUser()
   
   const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
@@ -94,11 +96,11 @@ export default function DataEntryPage() {
   const sessionsRef = useMemoFirebase(() => collection(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions"), [db])
   const rulesRef = useMemoFirebase(() => collection(db, "schedulingRules"), [db])
   
-  const { data: teachers, isLoading: loadingTeachers } = useCollection<Teacher>(teachersRef)
-  const { data: units, isLoading: loadingUnits } = useCollection<Unit>(unitsRef)
-  const { data: rooms, isLoading: loadingRooms } = useCollection<Room>(roomsRef)
-  const { data: sessions, isLoading: loadingSessions } = useCollection<TimetableEntry>(sessionsRef)
-  const { data: rules, isLoading: loadingRules } = useCollection<{ id: string, name: string }>(rulesRef)
+  const { data: teachers } = useCollection<Teacher>(teachersRef)
+  const { data: units } = useCollection<Unit>(unitsRef)
+  const { data: rooms } = useCollection<Room>(roomsRef)
+  const { data: sessions } = useCollection<TimetableEntry>(sessionsRef)
+  const { data: rules } = useCollection<{ id: string, name: string }>(rulesRef)
 
   const [mode, setMode] = useState<DataMode>('excel')
   const [selectedEntity, setSelectedEntity] = useState<EntityType>('teachers')
@@ -156,69 +158,77 @@ export default function DataEntryPage() {
   }, [rawInput])
 
   const handleClearDatabase = async () => {
-    if (!confirm("DANGER: This will delete ALL current institutional data including all trainers, rooms, units, and EVERY scheduled class. Continue?")) return
+    if (!user) {
+      toast({ variant: "destructive", title: "Authentication Pending", description: "Please wait for the secure session to initialize." })
+      return
+    }
+
+    if (!confirm("NUCLEAR WIPE: This will permanently delete EVERY document across all collections. This cannot be undone. Continue?")) return
     
     setIsProcessing(true)
-    console.log("Starting full database wipe...");
+    console.log("Starting Nuclear Database Wipe...");
     
     try {
       let totalDeleted = 0;
+      const targetCollections = ["teachers", "academicUnits", "rooms", "schedulingRules", "timetables"];
 
-      // 1. Wipe Root Collections
-      const rootCollections = ["teachers", "academicUnits", "rooms", "schedulingRules"];
-      for (const colName of rootCollections) {
+      for (const colName of targetCollections) {
+        console.log(`Scanning collection: ${colName}`);
         const colRef = collection(db, colName);
         const snapshot = await getDocs(colRef);
-        console.log(`Found ${snapshot.size} docs in root collection: ${colName}`);
         
+        if (snapshot.empty) {
+          console.log(`Collection ${colName} is already empty.`);
+          continue;
+        }
+
+        console.log(`Found ${snapshot.size} documents in ${colName}`);
+        
+        // Firestore batch limit is 500, we use 400 for safety
         for (let i = 0; i < snapshot.docs.length; i += 400) {
           const batch = writeBatch(db);
-          snapshot.docs.slice(i, i + 400).forEach(d => {
-            batch.delete(d.ref);
+          const chunk = snapshot.docs.slice(i, i + 400);
+          
+          for (const docSnapshot of chunk) {
+            // Special handling for nested classSessions inside Timetables
+            if (colName === "timetables") {
+              const sessionsRef = collection(db, "timetables", docSnapshot.id, "classSessions");
+              const sessionsSnapshot = await getDocs(sessionsRef);
+              
+              if (!sessionsSnapshot.empty) {
+                console.log(`Found ${sessionsSnapshot.size} nested sessions for timetable ${docSnapshot.id}`);
+                // Delete sessions in their own sub-batches
+                for (let j = 0; j < sessionsSnapshot.docs.length; j += 400) {
+                  const subBatch = writeBatch(db);
+                  sessionsSnapshot.docs.slice(j, j + 400).forEach(sDoc => {
+                    subBatch.delete(sDoc.ref);
+                    totalDeleted++;
+                  });
+                  await subBatch.commit();
+                  console.log(`Committed sub-batch for sessions...`);
+                }
+              }
+            }
+            batch.delete(docSnapshot.ref);
             totalDeleted++;
-          });
+          }
           await batch.commit();
+          console.log(`Committed batch for ${colName}...`);
         }
       }
 
-      // 2. Wipe Timetables and their nested Sessions
-      const timetablesRef = collection(db, "timetables");
-      const timetablesSnapshot = await getDocs(timetablesRef);
-      console.log(`Found ${timetablesSnapshot.size} timetables to process...`);
-
-      for (const timetableDoc of timetablesSnapshot.docs) {
-        // Find and wipe all nested classSessions for this timetable
-        const sessionsRef = collection(db, "timetables", timetableDoc.id, "classSessions");
-        const sessionsSnapshot = await getDocs(sessionsRef);
-        console.log(`Wiping ${sessionsSnapshot.size} sessions for timetable: ${timetableDoc.id}`);
-
-        for (let i = 0; i < sessionsSnapshot.docs.length; i += 400) {
-          const batch = writeBatch(db);
-          sessionsSnapshot.docs.slice(i, i + 400).forEach(d => {
-            batch.delete(d.ref);
-            totalDeleted++;
-          });
-          await batch.commit();
-        }
-
-        // Delete the timetable document itself
-        const finalBatch = writeBatch(db);
-        finalBatch.delete(timetableDoc.ref);
-        await finalBatch.commit();
-        totalDeleted++;
-      }
-
-      console.log(`Wipe complete. Total records removed: ${totalDeleted}`);
+      console.log(`Wipe complete. Total records purged: ${totalDeleted}`);
       toast({ 
-        title: "Database Wiped", 
-        description: `Successfully removed ${totalDeleted} entries across all collections.` 
+        title: "Database Reset Successful", 
+        description: `Permanently removed ${totalDeleted} entries. The system is now a clean slate.` 
       });
+      setRawInput("");
     } catch (e: any) {
-      console.error("Wipe execution failed:", e);
+      console.error("Critical wipe failure:", e);
       toast({ 
         variant: "destructive", 
-        title: "Wipe Failed", 
-        description: e.message || "An error occurred while clearing the database. Check console for details." 
+        title: "Wipe Operation Failed", 
+        description: e.message || "A secure database error occurred. Check the console for full details." 
       });
     } finally {
       setIsProcessing(false)
@@ -336,12 +346,12 @@ export default function DataEntryPage() {
         </div>
         <div className="flex gap-2">
            <Button 
-             variant="outline" 
-             className="text-destructive border-destructive/20 hover:bg-destructive/5" 
+             variant="destructive" 
+             className="shadow-lg border-2" 
              onClick={handleClearDatabase} 
-             disabled={isProcessing}
+             disabled={isProcessing || isUserLoading}
            >
-             {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+             {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4 fill-white" />}
              Wipe Database
            </Button>
            {mode === 'excel' ? (
@@ -474,4 +484,3 @@ export default function DataEntryPage() {
     </div>
   )
 }
-
