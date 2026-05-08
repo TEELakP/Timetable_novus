@@ -104,17 +104,19 @@ export default function DataEntryPage() {
     
     return uniqueLines.map((line) => {
       const parts = line.split('\t').map(p => p.trim())
-      if (parts.length < 5) return null
+      // Format: Campus (0), Location (1), Class (2), Day (3), Trainer (4), Email (5), Start (6), Finish (7), Class_name (8)
+      if (parts.length < 9) return null
       
       return {
         campus: parts[0] as Campus,
-        unit: parts[1],
-        day: parts[2] as Day,
-        trainer: parts[3],
-        email: parts[4],
-        start: parts[5],
-        finish: parts[6],
-        location: parts[7]
+        siteName: parts[1],
+        unit: parts[2],
+        day: parts[3] as Day,
+        trainer: parts[4],
+        email: parts[5],
+        start: parts[6],
+        finish: parts[7],
+        roomName: parts[8]
       }
     }).filter(Boolean)
   }, [rawInput])
@@ -200,7 +202,7 @@ export default function DataEntryPage() {
       parsedData.forEach((row: any) => {
         const teacherId = row.trainer.toLowerCase().replace(/[^a-z0-9]/g, '-')
         const unitId = row.unit.toLowerCase().replace(/[^a-z0-9]/g, '-')
-        const roomId = row.location.toLowerCase().replace(/[^a-z0-9]/g, '-')
+        const roomId = row.roomName.toLowerCase().replace(/[^a-z0-9]/g, '-')
         const campus = (row.campus || "Online") as Campus
 
         if (!processedTeachers.has(teacherId)) {
@@ -227,27 +229,27 @@ export default function DataEntryPage() {
         }
 
         if (!processedRooms.has(roomId)) {
-          const site = SITES_CONFIG[campus]?.find(s => s.type === 'Classroom')
+          const site = SITES_CONFIG[campus]?.find(s => s.name === row.siteName)
           batch.set(doc(db, "rooms", roomId), { 
             id: roomId, 
-            name: row.location, 
+            name: row.roomName, 
             capacity: 30, 
             campus,
-            siteName: site?.name || campus,
+            siteName: row.siteName,
             address: site?.address || "",
-            type: 'Classroom'
+            type: (site?.type as RoomType) || 'Classroom'
           }, { merge: true })
           processedRooms.add(roomId)
         }
 
-        const sessionKey = `${row.trainer}-${row.unit}-${row.day}-${row.start}-${row.location}`.toLowerCase().replace(/[^a-z0-9]/g, '-')
+        const sessionKey = `${row.trainer}-${row.unit}-${row.day}-${row.start}-${row.roomName}`.toLowerCase().replace(/[^a-z0-9]/g, '-')
         const sessionId = `s-${sessionKey}`
         
         batch.set(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionId), {
           id: sessionId,
           unitId,
           teacherId,
-          room: row.location,
+          room: row.roomName,
           day: row.day,
           startTime: parseTime(row.start),
           endTime: parseTime(row.finish)
@@ -294,7 +296,7 @@ export default function DataEntryPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Data Manager</h2>
-          <p className="text-muted-foreground text-sm">Bulk manage institutional records via Excel or raw JSON access.</p>
+          <p className="text-muted-foreground text-sm">Bulk manage records via Excel (9 columns) or raw JSON access.</p>
         </div>
         <div className="flex gap-2">
            <Button 
@@ -336,11 +338,11 @@ export default function DataEntryPage() {
                   <Database className="h-5 w-5 text-primary" />
                   Excel Copy-Paste Area
                 </CardTitle>
-                <CardDescription>Paste your spreadsheet rows here. Identical rows are automatically ignored.</CardDescription>
+                <CardDescription>Format: Campus, Location, Class, Day, Trainer, Email, Start, Finish, Class_name</CardDescription>
               </CardHeader>
               <CardContent className="flex-1 min-h-0">
                 <Textarea 
-                  placeholder="Perth	Room 1	Class A	Monday	John..."
+                  placeholder="Ultimo	Ultimo Campus (Theory)	ADCCD B1	Monday	Bharath	Bharath@novus.edu.au	9:30:00 AM	4:00:00 PM	Makalu"
                   className="font-mono text-[10px] h-full resize-none bg-muted/20 focus:bg-background transition-colors"
                   value={rawInput}
                   onChange={(e) => setRawInput(e.target.value)}
@@ -354,28 +356,30 @@ export default function DataEntryPage() {
                   <TableIcon className="h-5 w-5 text-primary" />
                   Preview & Mapping
                 </CardTitle>
-                <CardDescription>Verify the columns before syncing.</CardDescription>
+                <CardDescription>Verify your 9 columns before syncing.</CardDescription>
               </CardHeader>
               <CardContent className="p-0 overflow-auto flex-1">
                  {parsedData.length > 0 ? (
                    <Table>
                      <TableHeader className="bg-muted/50 sticky top-0 z-10">
                        <TableRow>
-                         <TableHead className="text-[10px]">Site</TableHead>
+                         <TableHead className="text-[10px]">Campus</TableHead>
+                         <TableHead className="text-[10px]">Location</TableHead>
                          <TableHead className="text-[10px]">Subject</TableHead>
                          <TableHead className="text-[10px]">Trainer</TableHead>
                          <TableHead className="text-[10px]">Time</TableHead>
-                         <TableHead className="text-[10px]">Room</TableHead>
+                         <TableHead className="text-[10px]">Class_name</TableHead>
                        </TableRow>
                      </TableHeader>
                      <TableBody>
                        {parsedData.map((row: any, i) => (
                          <TableRow key={i}>
                            <TableCell className="text-[10px] font-bold">{row.campus}</TableCell>
+                           <TableCell className="text-[10px] whitespace-nowrap">{row.siteName}</TableCell>
                            <TableCell className="text-[10px]">{row.unit}</TableCell>
                            <TableCell className="text-[10px]">{row.trainer}</TableCell>
                            <TableCell className="text-[10px] font-mono whitespace-nowrap">{row.day} {row.start}-{row.finish}</TableCell>
-                           <TableCell className="text-[10px]">{row.location}</TableCell>
+                           <TableCell className="text-[10px] font-black">{row.roomName}</TableCell>
                          </TableRow>
                        ))}
                      </TableBody>
@@ -383,7 +387,7 @@ export default function DataEntryPage() {
                  ) : (
                    <div className="flex flex-col items-center justify-center h-full text-center px-8 text-muted-foreground">
                       <FileSpreadsheet className="h-12 w-12 mb-4 opacity-20" />
-                      <p className="text-sm">No spreadsheet data detected in the paste area.</p>
+                      <p className="text-sm">No 9-column spreadsheet data detected.</p>
                    </div>
                  )}
               </CardContent>
