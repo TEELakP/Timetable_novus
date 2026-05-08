@@ -1,4 +1,3 @@
-
 "use client"
 
 import React, { useMemo, useState, useRef } from "react"
@@ -179,11 +178,12 @@ export default function PrintPage() {
     
     setIsDownloading(true)
     try {
+      // Increased quality and specific dimensions for better clarity
       const dataUrl = await toJpeg(timetableRef.current, { 
-        quality: 0.95,
+        quality: 1.0,
         backgroundColor: '#ffffff',
-        fontEmbedCSS: '', 
         cacheBust: true,
+        pixelRatio: 2, // Retains clarity for overlapping small text
       })
       const link = document.createElement('a')
       link.download = `Novus_Weekly_Timetable_${new Date().toISOString().split('T')[0]}.jpg`
@@ -214,7 +214,7 @@ export default function PrintPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Weekly Grid View</h2>
-          <p className="text-muted-foreground text-sm">A compact, grid-based weekly timetable optimized for downloading and sharing.</p>
+          <p className="text-muted-foreground text-sm">A high-resolution weekly timetable optimized for sharing.</p>
         </div>
         <Button 
           onClick={handleDownloadJpg} 
@@ -280,56 +280,70 @@ export default function PrintPage() {
       <div className="overflow-x-auto p-4 bg-muted/20 rounded-lg">
         <div 
           ref={timetableRef}
-          className="bg-white p-6 rounded-lg border shadow-sm min-w-[1000px] text-black"
+          className="bg-white p-8 rounded-lg border shadow-sm min-w-[1280px] text-black"
         >
-          <div className="mb-4 text-center border-b pb-4">
-            <h1 className="text-xl font-black uppercase tracking-tighter text-primary">Novus Academic Weekly Timetable</h1>
-            <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-widest mt-0.5">Week of {new Date().toLocaleDateString('en-AU')}</p>
+          <div className="mb-6 text-center border-b pb-6">
+            <h1 className="text-2xl font-black uppercase tracking-tighter text-primary">Novus Academic Weekly Timetable</h1>
+            <p className="text-muted-foreground text-[11px] uppercase font-bold tracking-widest mt-1">Institutional Schedule • Week of {new Date().toLocaleDateString('en-AU')}</p>
           </div>
 
-          <div className="grid grid-cols-7 border border-gray-300">
+          <div className="grid grid-cols-7 border border-gray-300 rounded-sm overflow-hidden">
             {DAYS.map(day => (
               <div key={day} className="flex flex-col border-r border-gray-300 last:border-r-0">
-                <div className="bg-gray-100 border-b border-gray-300 py-2 text-center font-black text-xs uppercase tracking-tight">
+                <div className="bg-gray-100 border-b border-gray-300 py-3 text-center font-black text-[12px] uppercase tracking-tight text-gray-700">
                   {day}
                 </div>
-                <div className="flex-1 bg-gray-50/30 p-1 space-y-1 min-h-[600px]">
+                <div className="flex-1 bg-gray-50/20 p-2 space-y-2 min-h-[700px]">
                   {sessionsByDay[day].map(session => {
                     const unit = units?.find(u => u.id === session.unitId)
                     const teacher = teachers?.find(t => t.id === session.teacherId)
                     
-                    let bgColor = "bg-blue-100"
-                    if (unit?.type === 'practical') bgColor = "bg-orange-100"
-                    if (unit?.type === 'online') bgColor = "bg-green-100"
-                    if (unit?.name.includes('ELICOS')) bgColor = "bg-blue-200"
-                    if (unit?.name.includes('DCS') || unit?.name.includes('Unit 1')) bgColor = "bg-yellow-100"
-                    if (unit?.name.includes('ADCCD')) bgColor = "bg-purple-200"
+                    let bgColor = "bg-blue-50"
+                    let borderColor = "border-blue-300"
+                    
+                    if (unit?.type === 'practical') {
+                      bgColor = "bg-orange-50"
+                      borderColor = "border-orange-300"
+                    } else if (unit?.type === 'online') {
+                      bgColor = "bg-emerald-50"
+                      borderColor = "border-emerald-300"
+                    } else if (unit?.name.includes('ELICOS')) {
+                      bgColor = "bg-sky-50"
+                      borderColor = "border-sky-300"
+                    }
 
                     return (
                       <div 
                         key={session.id} 
                         className={cn(
-                          "p-1 rounded border border-gray-400/50 shadow-sm flex flex-col items-center text-center leading-[1.1]",
-                          bgColor
+                          "p-2 rounded border shadow-sm flex flex-col items-center text-center gap-1.5 transition-all",
+                          bgColor,
+                          borderColor
                         )}
                       >
-                        <div className="flex flex-wrap items-center justify-center gap-x-1 mb-0.5">
-                          <span className="text-[12px] font-black tracking-tighter text-gray-900">
+                        <div className="w-full">
+                          <div className="text-[11px] font-black leading-tight text-gray-900 break-words mb-1">
                             {unit?.name}
-                          </span>
-                          <span className="text-[11px] font-bold text-gray-700">
-                            {teacher?.name}
-                          </span>
+                          </div>
+                          <div className="text-[10px] font-bold text-gray-600 truncate px-1">
+                            {teacher?.name || 'Unassigned'}
+                          </div>
                         </div>
-                        <div className="text-[10px] font-black text-gray-600 whitespace-nowrap">
-                          {session.startTime}-{session.endTime}
+                        
+                        <div className="w-full flex items-center justify-between mt-auto pt-1.5 border-t border-gray-400/20">
+                          <div className="text-[9px] font-black text-gray-800 bg-white/60 px-1 rounded">
+                            {session.startTime}-{session.endTime}
+                          </div>
+                          <div className="text-[9px] font-bold text-primary truncate max-w-[50%]">
+                            {session.room}
+                          </div>
                         </div>
                       </div>
                     )
                   })}
                   {sessionsByDay[day].length === 0 && (
-                    <div className="h-full flex items-center justify-center opacity-10">
-                      <CalendarDays className="h-12 w-12 text-gray-400" />
+                    <div className="h-full flex items-center justify-center opacity-5">
+                      <CalendarDays className="h-16 w-16 text-gray-400" />
                     </div>
                   )}
                 </div>
@@ -337,9 +351,13 @@ export default function PrintPage() {
             ))}
           </div>
 
-          <div className="mt-4 pt-4 border-t text-[10px] text-muted-foreground flex justify-between items-center">
-            <p>Institutional Schedule • Confirmed Room Bookings • Confirmed Trainer Assignments</p>
-            <p className="font-bold">Novus Education</p>
+          <div className="mt-6 pt-6 border-t text-[10px] text-muted-foreground flex justify-between items-center">
+            <div className="flex gap-4">
+              <span className="flex items-center gap-1"><div className="w-2 h-2 bg-blue-100 border border-blue-300"></div> Theory</span>
+              <span className="flex items-center gap-1"><div className="w-2 h-2 bg-orange-100 border border-orange-300"></div> Practical</span>
+              <span className="flex items-center gap-1"><div className="w-2 h-2 bg-emerald-100 border border-emerald-300"></div> Online</span>
+            </div>
+            <p className="font-black uppercase tracking-widest text-primary">Novus Education Australia</p>
           </div>
         </div>
       </div>
