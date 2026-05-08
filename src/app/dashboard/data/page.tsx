@@ -82,7 +82,7 @@ Ultimo	GDM	Wednesday	Sushil	Sushil@novus.edu.au	2:00:00 PM	10:30:00 PM	Suite 1.1
 Ultimo	C3AET B2	Wednesday	Vikesh	Vikesh@novus.edu.au	4:00:00 PM	10:30:00 PM	Kosciuscko`
 
 type DataMode = 'excel' | 'json'
-type EntityType = 'teachers' | 'academicUnits' | 'rooms' | 'sessions'
+type EntityType = 'teachers' | 'academicUnits' | 'rooms' | 'sessions' | 'rules'
 
 export default function DataEntryPage() {
   const { toast } = useToast()
@@ -92,11 +92,13 @@ export default function DataEntryPage() {
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
   const roomsRef = useMemoFirebase(() => collection(db, "rooms"), [db])
   const sessionsRef = useMemoFirebase(() => collection(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions"), [db])
+  const rulesRef = useMemoFirebase(() => collection(db, "schedulingRules"), [db])
   
   const { data: teachers } = useCollection<Teacher>(teachersRef)
   const { data: units } = useCollection<Unit>(unitsRef)
   const { data: rooms } = useCollection<Room>(roomsRef)
   const { data: sessions } = useCollection<TimetableEntry>(sessionsRef)
+  const { data: rules } = useCollection<{ id: string, name: string }>(rulesRef)
 
   const [mode, setMode] = useState<DataMode>('excel')
   const [selectedEntity, setSelectedEntity] = useState<EntityType>('teachers')
@@ -110,9 +112,10 @@ export default function DataEntryPage() {
     if (selectedEntity === 'academicUnits') currentData = units || []
     if (selectedEntity === 'rooms') currentData = rooms || []
     if (selectedEntity === 'sessions') currentData = sessions || []
+    if (selectedEntity === 'rules') currentData = rules || []
     
     setJsonInput(JSON.stringify(currentData, null, 2))
-  }, [selectedEntity, teachers, units, rooms, sessions])
+  }, [selectedEntity, teachers, units, rooms, sessions, rules])
 
   const parseTime = (timeStr: string) => {
     if (!timeStr) return "09:00"
@@ -132,7 +135,6 @@ export default function DataEntryPage() {
 
   const parsedData = useMemo(() => {
     if (!rawInput.trim()) return []
-    // Split lines and explicitly filter out exact string duplicates in the input text
     const lines = rawInput.split('\n').filter(l => l.trim() !== "")
     const uniqueLines = Array.from(new Set(lines))
     
@@ -154,7 +156,7 @@ export default function DataEntryPage() {
   }, [rawInput])
 
   const handleClearDatabase = async () => {
-    if (!confirm("DANGER: This will delete ALL current institutional data including Teachers, Units, Rooms and Sessions. Continue?")) return
+    if (!confirm("DANGER: This will delete ALL current institutional data including Teachers, Units, Rooms, Sessions, and Rules. Continue?")) return
     setIsProcessing(true)
     const batch = writeBatch(db)
     try {
@@ -162,10 +164,12 @@ export default function DataEntryPage() {
       units?.forEach(u => batch.delete(doc(db, "academicUnits", u.id)))
       rooms?.forEach(r => batch.delete(doc(db, "rooms", r.id)))
       sessions?.forEach(s => batch.delete(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id)))
+      rules?.forEach(rule => batch.delete(doc(db, "schedulingRules", rule.id)))
+      
       await batch.commit()
-      toast({ title: "Database Wiped" })
+      toast({ title: "Database Wiped", description: "All institutional entries have been removed." })
     } catch (e) {
-      toast({ variant: "destructive", title: "Error" })
+      toast({ variant: "destructive", title: "Wipe Failed" })
     } finally {
       setIsProcessing(false)
     }
@@ -224,8 +228,6 @@ export default function DataEntryPage() {
           processedRooms.add(roomId)
         }
 
-        // Use a stable ID derived from the row content to prevent duplicate session records
-        // if the same data is synced multiple times.
         const sessionKey = `${row.trainer}-${row.unit}-${row.day}-${row.start}-${row.location}`.toLowerCase().replace(/[^a-z0-9]/g, '-')
         const sessionId = `s-${sessionKey}`
         
@@ -256,9 +258,14 @@ export default function DataEntryPage() {
       const batch = writeBatch(db)
       data.forEach((item: any) => {
         if (!item.id) return
-        const ref = selectedEntity === 'sessions'
-          ? doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", item.id)
-          : doc(db, selectedEntity, item.id)
+        let ref;
+        if (selectedEntity === 'sessions') {
+          ref = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", item.id)
+        } else if (selectedEntity === 'rules') {
+          ref = doc(db, "schedulingRules", item.id)
+        } else {
+          ref = doc(db, selectedEntity === 'academicUnits' ? "academicUnits" : selectedEntity, item.id)
+        }
         batch.set(ref, item, { merge: true })
       })
       await batch.commit()
@@ -387,6 +394,7 @@ export default function DataEntryPage() {
                     <SelectItem value="academicUnits">Units Catalog</SelectItem>
                     <SelectItem value="rooms">Rooms List</SelectItem>
                     <SelectItem value="sessions">Class Sessions</SelectItem>
+                    <SelectItem value="rules">Scheduling Rules</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
