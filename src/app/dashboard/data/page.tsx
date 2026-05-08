@@ -80,7 +80,6 @@ export default function DataEntryPage() {
   const parseTime = (timeStr: string) => {
     if (!timeStr) return "09:00"
     const clean = timeStr.trim().toUpperCase()
-    // Support formats like "4:00 PM", "10:30 AM", "16:00"
     const match = clean.match(/(\d+):(\d+)(?::(\d+))?\s*(AM|PM)?/)
     if (!match) return "09:00"
 
@@ -94,29 +93,37 @@ export default function DataEntryPage() {
     return `${hour.toString().padStart(2, '0')}:${min}`
   }
 
+  const inferCampus = (location: string): Campus => {
+    const loc = location.toLowerCase()
+    if (loc.includes('ultimo')) return 'Ultimo'
+    if (loc.includes('gosford')) return 'Gosford'
+    if (loc.includes('perth')) return 'Perth'
+    return 'Online'
+  }
+
   const parsedData = useMemo(() => {
     if (!rawInput.trim()) return []
     const lines = rawInput.split('\n').filter(l => l.trim() !== "")
     
     return lines.map((line) => {
       const parts = line.split('\t').map(p => p.trim())
-      // Expected Format (9 columns):
-      // Campus (0), Location (1), Class (2), Day (3), Trainer (4), Email (5), Start (6), Finish (7), Class_name (8)
-      if (parts.length < 9) return null
+      // New 8-column format:
+      // Location (0), Class (1), Day (2), Trainer (3), Email (4), Start (5), Finish (6), Class_name (7)
+      if (parts.length < 8) return null
       
-      const campus = parts[0] as Campus
-      const locationAddress = parts[1]
-      const className = parts[8] || campus // Fallback to Campus name if Class_name is empty
+      const location = parts[0]
+      const campus = inferCampus(location)
+      const className = parts[7] || campus
       
       return {
         campus,
-        location: locationAddress,
-        unit: parts[2],
-        day: parts[3] as Day,
-        trainer: parts[4],
-        email: parts[5],
-        start: parts[6],
-        finish: parts[7],
+        location,
+        unit: parts[1],
+        day: parts[2] as Day,
+        trainer: parts[3],
+        email: parts[4],
+        start: parts[5],
+        finish: parts[6],
         roomName: className
       }
     }).filter(Boolean)
@@ -136,13 +143,11 @@ export default function DataEntryPage() {
         
         if (snapshot.empty) continue;
         
-        // Chunk deletions to avoid 500-op limit
         for (let i = 0; i < snapshot.docs.length; i += 400) {
           const batch = writeBatch(db);
           const chunk = snapshot.docs.slice(i, i + 400);
           
           for (const docSnapshot of chunk) {
-            // If it's the timetables collection, clear nested sessions first
             if (colName === "timetables") {
               const sessionsRef = collection(db, "timetables", docSnapshot.id, "classSessions");
               const sessionsSnapshot = await getDocs(sessionsRef);
@@ -161,7 +166,7 @@ export default function DataEntryPage() {
       }
 
       toast({ 
-        title: "Database Reset Complete", 
+        title: "Nuclear Wipe Complete", 
         description: `Successfully removed ${totalDeleted} entries across all collections.` 
       });
       setRawInput("");
@@ -187,7 +192,6 @@ export default function DataEntryPage() {
 
     try {
       parsedData.forEach((row: any) => {
-        // 1. Sanitize IDs
         const trainerName = row.trainer || "Unassigned"
         const teacherId = trainerName.toLowerCase().trim().replace(/[^a-z0-9]/g, '-')
         const unitName = row.unit || "Unknown Class"
@@ -198,7 +202,6 @@ export default function DataEntryPage() {
 
         if (!teacherId || !unitId || !roomId) return
 
-        // 2. Map Teacher
         if (!processedTeachers.has(teacherId)) {
           batch.set(doc(db, "teachers", teacherId), { 
             id: teacherId, 
@@ -211,7 +214,6 @@ export default function DataEntryPage() {
           processedTeachers.add(teacherId)
         }
 
-        // 3. Map Unit
         if (!processedUnits.has(unitId)) {
           batch.set(doc(db, "academicUnits", unitId), { 
             id: unitId, 
@@ -223,7 +225,6 @@ export default function DataEntryPage() {
           processedUnits.add(unitId)
         }
 
-        // 4. Map Room
         if (!processedRooms.has(roomId)) {
           const roomType: RoomType = row.location.toLowerCase().includes('kitchen') || row.location.toLowerCase().includes('workshop') ? 'Workshop' : 'Classroom'
           
@@ -239,10 +240,10 @@ export default function DataEntryPage() {
           processedRooms.add(roomId)
         }
 
-        // 5. Map Session
         const startT = parseTime(row.start)
         const finishT = parseTime(row.finish)
-        const sessionKey = `${teacherId}-${unitId}-${row.day.toLowerCase()}-${startT.replace(':', '')}`.replace(/[^a-z0-9]/g, '-')
+        const dayKey = row.day.toLowerCase().trim()
+        const sessionKey = `${teacherId}-${unitId}-${dayKey}-${startT.replace(':', '')}`.replace(/[^a-z0-9]/g, '-')
         const sessionId = `s-${sessionKey}`
         
         batch.set(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionId), {
@@ -250,6 +251,7 @@ export default function DataEntryPage() {
           unitId,
           teacherId,
           room: roomIdentifier,
+          location: row.location,
           campus,
           day: row.day,
           startTime: startT,
@@ -298,7 +300,7 @@ export default function DataEntryPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline text-primary">Data Manager</h2>
-          <p className="text-muted-foreground text-sm">Propagate institutional entities via 9-column Excel sync.</p>
+          <p className="text-muted-foreground text-sm">Propagate entities via 8-column format (Location-based).</p>
         </div>
         <div className="flex gap-2">
            <Button 
@@ -335,13 +337,13 @@ export default function DataEntryPage() {
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <FileSpreadsheet className="h-5 w-5 text-primary" />
-                  Excel Input (9 Columns)
+                  Excel Input (8 Columns)
                 </CardTitle>
-                <CardDescription>Format: Campus, Location, Class, Day, Trainer, Email, Start, Finish, Class_name</CardDescription>
+                <CardDescription>Format: Location, Class, Day, Trainer, Email, Start, Finish, Class_name</CardDescription>
               </CardHeader>
               <CardContent className="flex-1">
                 <Textarea 
-                  placeholder="Paste your 9-column schedule here..."
+                  placeholder="Paste your 8-column schedule here..."
                   className="font-mono text-[11px] h-full resize-none bg-muted/20"
                   value={rawInput}
                   onChange={(e) => setRawInput(e.target.value)}
@@ -361,19 +363,21 @@ export default function DataEntryPage() {
                    <Table>
                      <TableHeader className="bg-muted/50 sticky top-0">
                        <TableRow>
-                         <TableHead className="text-[10px]">Campus</TableHead>
-                         <TableHead className="text-[10px]">Class_name (Room)</TableHead>
+                         <TableHead className="text-[10px]">Location</TableHead>
+                         <TableHead className="text-[10px]">Room (Class_name)</TableHead>
                          <TableHead className="text-[10px]">Subject</TableHead>
                          <TableHead className="text-[10px]">Trainer</TableHead>
+                         <TableHead className="text-[10px]">Day/Time</TableHead>
                        </TableRow>
                      </TableHeader>
                      <TableBody>
                        {parsedData.map((row: any, i) => (
                          <TableRow key={i}>
-                           <TableCell className="text-[10px] font-bold">{row.campus}</TableCell>
+                           <TableCell className="text-[10px] font-bold max-w-[150px] truncate">{row.location}</TableCell>
                            <TableCell className="text-[10px] text-primary font-black">{row.roomName}</TableCell>
                            <TableCell className="text-[10px]">{row.unit}</TableCell>
                            <TableCell className="text-[10px]">{row.trainer}</TableCell>
+                           <TableCell className="text-[10px]">{row.day} {row.start}</TableCell>
                          </TableRow>
                        ))}
                      </TableBody>
@@ -422,16 +426,16 @@ export default function DataEntryPage() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <AlertTriangle className="h-5 w-5" />
-              Reset All Institutional Data
+              Nuclear Database Reset
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete all records across all collections (Teachers, Units, Rooms, and Sessions). This action is irreversible.
+              This will permanently delete all records across all collections, including hidden sub-collections. This is required before reloading your new Location-based data.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleClearDatabase} className="bg-destructive text-destructive-foreground">
-              Confirm Reset
+              Confirm Nuclear Wipe
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

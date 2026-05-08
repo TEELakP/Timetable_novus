@@ -151,6 +151,7 @@ export default function TimetablePage() {
   const [selectedUnits, setSelectedUnits] = useState<string[]>([])
   const [selectedDays, setSelectedDays] = useState<string[]>([])
   const [selectedRooms, setSelectedRooms] = useState<string[]>([])
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([])
 
   const [isAddSessionOpen, setIsAddSessionOpen] = useState(false)
   const [newSession, setNewSession] = useState({
@@ -160,6 +161,7 @@ export default function TimetablePage() {
     startTime: "09:00",
     endTime: "11:00",
     room: "",
+    location: "",
     campus: "Ultimo" as Campus
   })
 
@@ -176,19 +178,34 @@ export default function TimetablePage() {
     if (selectedUnits.length > 0) data = data.filter(s => selectedUnits.includes(s.unitId))
     if (selectedDays.length > 0) data = data.filter(s => selectedDays.includes(s.day))
     if (selectedRooms.length > 0) data = data.filter(s => selectedRooms.includes(s.room))
+    if (selectedLocations.length > 0) data = data.filter(s => selectedLocations.includes(s.location || ''))
     
     return data.sort((a, b) => {
+      // Primary sort: Location
+      const locA = a.location || ''
+      const locB = b.location || ''
+      if (locA !== locB) return locA.localeCompare(locB)
+
+      // Secondary sort: Day
       const dayIndexA = DAYS.indexOf(a.day)
       const dayIndexB = DAYS.indexOf(b.day)
       if (dayIndexA !== dayIndexB) return dayIndexA - dayIndexB
+
+      // Tertiary sort: Start Time
       return a.startTime.localeCompare(b.startTime)
     })
-  }, [sessions, selectedCampuses, selectedTeachers, selectedUnits, selectedDays, selectedRooms])
+  }, [sessions, selectedCampuses, selectedTeachers, selectedUnits, selectedDays, selectedRooms, selectedLocations])
 
   const roomOptions = useMemo(() => {
     if (!sessions) return []
     const uniqueRooms = Array.from(new Set(sessions.map(s => s.room).filter(Boolean)))
     return uniqueRooms.sort().map(r => ({ label: r, value: r }))
+  }, [sessions])
+
+  const locationOptions = useMemo(() => {
+    if (!sessions) return []
+    const uniqueLocs = Array.from(new Set(sessions.map(s => s.location).filter(Boolean)))
+    return uniqueLocs.sort().map(l => ({ label: l, value: l }))
   }, [sessions])
 
   const handleAddSession = () => {
@@ -216,7 +233,7 @@ export default function TimetablePage() {
       const batch = writeBatch(db)
       sessionsSnapshot.docs.forEach(docSnap => batch.delete(docSnap.ref))
       await batch.commit()
-      toast({ title: "Database Wiped Successfully" })
+      toast({ title: "Emergency Reset Complete" })
     } catch (e: any) {
       toast({ variant: "destructive", title: "Reset Failed", description: e.message })
     } finally {
@@ -238,11 +255,11 @@ export default function TimetablePage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Weekly Overview</h2>
-          <p className="text-muted-foreground text-sm">Reviewing {filteredSessions.length} active sessions.</p>
+          <p className="text-muted-foreground text-sm">Reviewing {filteredSessions.length} active sessions sorted by Location.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setIsResetDialogOpen(true)} className="text-destructive border-destructive/20 hover:bg-destructive/10">
-            <Trash2 className="mr-2 h-4 w-4" /> Emergency Reset
+            <Trash2 className="mr-2 h-4 w-4" /> Reset Sessions
           </Button>
           <Button onClick={() => setIsAddSessionOpen(true)} className="bg-primary">
             <Plus className="mr-2 h-4 w-4" /> New Session
@@ -275,11 +292,11 @@ export default function TimetablePage() {
         />
 
         <MultiSelectFilter 
-          label="Cities"
+          label="Locations"
           icon={MapPin}
-          options={CAMPUSES.map(c => ({ label: c, value: c }))}
-          selected={selectedCampuses}
-          onChange={setSelectedCampuses}
+          options={locationOptions}
+          selected={selectedLocations}
+          onChange={setSelectedLocations}
         />
 
         <MultiSelectFilter 
@@ -298,12 +315,12 @@ export default function TimetablePage() {
           onChange={setSelectedTeachers}
         />
 
-        {(selectedCampuses.length > 0 || selectedTeachers.length > 0 || selectedRooms.length > 0 || selectedDays.length > 0) && (
+        {(selectedCampuses.length > 0 || selectedTeachers.length > 0 || selectedRooms.length > 0 || selectedDays.length > 0 || selectedLocations.length > 0) && (
           <Button 
             variant="ghost" 
             size="sm" 
             className="h-8 text-[10px] font-bold uppercase text-primary/60"
-            onClick={() => { setSelectedCampuses([]); setSelectedTeachers([]); setSelectedUnits([]); setSelectedDays([]); setSelectedRooms([]); }}
+            onClick={() => { setSelectedCampuses([]); setSelectedTeachers([]); setSelectedUnits([]); setSelectedDays([]); setSelectedRooms([]); setSelectedLocations([]); }}
           >
             Clear All
           </Button>
@@ -336,6 +353,9 @@ export default function TimetablePage() {
                             </div>
                             <div className="text-[10px] font-bold opacity-80 truncate mb-1 text-blue-800">
                               {teacher?.name || 'Unassigned'}
+                            </div>
+                            <div className="text-[9px] text-muted-foreground truncate mb-1 italic">
+                              {session.location}
                             </div>
                             <div className="flex items-center justify-between mt-auto">
                               <div className="text-[9px] font-black opacity-70 whitespace-nowrap flex items-center gap-1">
@@ -370,7 +390,7 @@ export default function TimetablePage() {
                     <TableHead>Time</TableHead>
                     <TableHead>Academic Unit</TableHead>
                     <TableHead>Trainer</TableHead>
-                    <TableHead>Location</TableHead>
+                    <TableHead>Location & Room</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -389,7 +409,12 @@ export default function TimetablePage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-sm font-medium">{teacher?.name || 'Unassigned'}</TableCell>
-                        <TableCell className="text-sm">{session.room}</TableCell>
+                        <TableCell>
+                           <div className="flex flex-col">
+                              <span className="text-xs font-medium">{session.location}</span>
+                              <span className="text-[10px] font-black text-primary/60">{session.room}</span>
+                           </div>
+                        </TableCell>
                         <TableCell className="text-right">
                           <Button 
                             variant="ghost" 
@@ -417,7 +442,7 @@ export default function TimetablePage() {
               <AlertTriangle className="h-5 w-5" /> Emergency Reset
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will clear ALL sessions from your database. Use this if the main Wipe button is failing.
+              This will permanently delete ALL active class sessions. This is recommended before uploading your new Location-based data format.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -433,14 +458,9 @@ export default function TimetablePage() {
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader><DialogTitle>Add Manual Session</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label>Campus</Label>
-              <Select value={newSession.campus} onValueChange={(v: Campus) => setNewSession({...newSession, campus: v})}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
+             <div className="grid gap-2">
+              <Label>Location</Label>
+              <Input value={newSession.location} onChange={e => setNewSession({...newSession, location: e.target.value})} placeholder="e.g. Ultimo Campus" />
             </div>
             <div className="grid gap-2">
               <Label>Subject</Label>
@@ -448,6 +468,15 @@ export default function TimetablePage() {
                 <SelectTrigger><SelectValue placeholder="Select Subject" /></SelectTrigger>
                 <SelectContent>
                   {units?.map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Trainer</Label>
+              <Select value={newSession.teacherId} onValueChange={(v) => setNewSession({...newSession, teacherId: v})}>
+                <SelectTrigger><SelectValue placeholder="Select Trainer" /></SelectTrigger>
+                <SelectContent>
+                  {teachers?.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
