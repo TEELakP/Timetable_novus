@@ -13,7 +13,8 @@ import {
   ExternalLink,
   Clock,
   DoorOpen,
-  Edit2
+  Edit2,
+  User as UserIcon
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
@@ -151,6 +152,7 @@ export default function UnitsPage() {
 
   // Deletion state
   const [unitToDelete, setUnitToDelete] = useState<string | null>(null)
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
 
   // Detail Modal State
   const [selectedUnitForDetail, setSelectedUnitForDetail] = useState<Unit | null>(null)
@@ -194,6 +196,13 @@ export default function UnitsPage() {
         return a.startTime.localeCompare(b.startTime)
       })
   }, [selectedUnitForDetail, sessions])
+
+  // Filter teachers to only show those qualified for the selected unit
+  const qualifiedTeachers = useMemo(() => {
+    if (!selectedUnitForDetail || !teachers) return []
+    return teachers.filter(t => t.qualifiedUnits.includes(selectedUnitForDetail.id))
+      .sort((a,b) => a.name.localeCompare(b.name))
+  }, [selectedUnitForDetail, teachers])
 
   const [isSingleOpen, setIsSingleOpen] = useState(false)
   const [newUnitName, setNewUnitName] = useState("")
@@ -249,12 +258,20 @@ export default function UnitsPage() {
     toast({ title: "Session Added" })
   }
 
-  const confirmDelete = () => {
+  const confirmDeleteUnit = () => {
     if (!unitToDelete) return
     const unitRef = doc(db, "academicUnits", unitToDelete)
     deleteDocumentNonBlocking(unitRef)
     setUnitToDelete(null)
     toast({ title: "Unit Removed", description: "The academic unit has been deleted." })
+  }
+
+  const confirmDeleteSession = () => {
+    if (!sessionToDelete) return
+    const sessionRef = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionToDelete)
+    deleteDocumentNonBlocking(sessionRef)
+    setSessionToDelete(null)
+    toast({ title: "Session Removed", description: "The class instance has been deleted." })
   }
 
   if (loadingUnits) {
@@ -387,7 +404,7 @@ export default function UnitsPage() {
         </CardContent>
       </Card>
 
-      {/* Deletion Confirmation */}
+      {/* Deletion Confirmation for Unit */}
       <AlertDialog open={!!unitToDelete} onOpenChange={(open) => !open && setUnitToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -401,8 +418,29 @@ export default function UnitsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction onClick={confirmDeleteUnit} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               Delete Unit
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Deletion Confirmation for Session */}
+      <AlertDialog open={!!sessionToDelete} onOpenChange={(open) => !open && setSessionToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Delete Session
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove this specific class session?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteSession} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Remove Session
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -455,17 +493,27 @@ export default function UnitsPage() {
                         </TableCell>
                         <TableCell className="text-xs max-w-[200px] truncate">{session.room}</TableCell>
                         <TableCell className="text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8"
-                            onClick={() => {
-                              setEditingSession(session)
-                              setNewRoomForSession(session.room)
-                            }}
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              onClick={() => {
+                                setEditingSession(session)
+                                setNewRoomForSession(session.room)
+                              }}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-destructive"
+                              onClick={() => setSessionToDelete(session.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     )
@@ -480,7 +528,7 @@ export default function UnitsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* New Session Dialog for Specific Unit */}
+      {/* New Session Dialog for Specific Unit - TEACHER VALIDATION ENFORCED */}
       <Dialog open={isAddSessionOpen} onOpenChange={setIsAddSessionOpen}>
         <DialogContent>
           <DialogHeader>
@@ -488,15 +536,27 @@ export default function UnitsPage() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label>Trainer</Label>
+              <Label className="flex items-center gap-2">
+                <UserIcon className="h-3 w-3" /> Qualified Trainer
+              </Label>
               <Select value={newSessionData.teacherId} onValueChange={(v) => setNewSessionData({...newSessionData, teacherId: v})}>
-                <SelectTrigger><SelectValue placeholder="Select Trainer" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Qualified Trainer" />
+                </SelectTrigger>
                 <SelectContent>
-                  {teachers?.sort((a,b) => a.name.localeCompare(b.name)).map(t => (
+                  {qualifiedTeachers.map(t => (
                     <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                   ))}
+                  {qualifiedTeachers.length === 0 && (
+                    <SelectItem value="none" disabled>No qualified trainers found</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
+              {qualifiedTeachers.length === 0 && (
+                <p className="text-[10px] text-destructive font-medium italic">
+                  Note: No trainers are currently marked as qualified to teach this unit.
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
@@ -533,7 +593,9 @@ export default function UnitsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddSessionOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddSessionToUnit}>Save Session</Button>
+            <Button onClick={handleAddSessionToUnit} disabled={!newSessionData.teacherId || newSessionData.teacherId === 'none'}>
+              Save Session
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -551,12 +613,11 @@ export default function UnitsPage() {
                   {rooms?.sort((a,b) => a.name.localeCompare(b.name)).map(r => (
                     <SelectItem key={r.id} value={r.name}>{r.name} ({r.campus})</SelectItem>
                   ))}
-                  <SelectItem value="Other">Custom Location...</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Manual Entry</Label>
+              <Label>Manual Entry (Optional)</Label>
               <Input 
                 value={newRoomForSession} 
                 onChange={e => setNewRoomForSession(e.target.value)}
