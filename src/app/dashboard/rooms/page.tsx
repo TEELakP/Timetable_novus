@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo } from "react"
@@ -145,7 +144,7 @@ export default function RoomsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline text-primary">Institutional Hierarchy</h2>
-          <p className="text-muted-foreground text-sm">City > Category > Classroom/Workshop Locations</p>
+          <p className="text-muted-foreground text-sm">City &gt; Category &gt; Classroom/Workshop Locations</p>
         </div>
         <Button onClick={() => setIsSingleOpen(true)} className="bg-primary hover:bg-primary/90">
           <Plus className="mr-2 h-4 w-4" /> Add Room/Location
