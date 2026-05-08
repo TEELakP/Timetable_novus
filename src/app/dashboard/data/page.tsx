@@ -6,20 +6,17 @@ import {
   Database, 
   Trash2, 
   RefreshCw, 
-  CheckCircle2, 
-  AlertCircle,
   Loader2,
   Table as TableIcon,
-  ChevronRight,
   Code2,
   FileSpreadsheet,
   Save,
   FileJson,
   Zap,
-  AlertTriangle
+  AlertTriangle,
+  Info
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
@@ -36,10 +33,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useFirestore, useCollection, useMemoFirebase, useUser } from "@/firebase"
-import { collection, doc, writeBatch, getDocs, query, limit } from "firebase/firestore"
+import { collection, doc, writeBatch, getDocs } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { Campus, Day, Teacher, Unit, Room, TimetableEntry, RoomType } from "@/lib/types"
-import { SITES_CONFIG } from "@/lib/mock-data"
+import { ADDRESS_MAP } from "@/lib/mock-data"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 
@@ -49,7 +46,7 @@ type EntityType = 'teachers' | 'academicUnits' | 'rooms' | 'sessions' | 'rules'
 export default function DataEntryPage() {
   const { toast } = useToast()
   const db = useFirestore()
-  const { user, isUserLoading } = useUser()
+  const { isUserLoading } = useUser()
   
   const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
@@ -103,19 +100,24 @@ export default function DataEntryPage() {
     
     return lines.map((line) => {
       const parts = line.split('\t').map(p => p.trim())
-      // Format: Campus (0), Location (1), Class (2), Day (3), Trainer (4), Email (5), Start (6), Finish (7), Class_name (8)
+      // Expected Format (9 columns):
+      // Campus (0), Location (1), Class (2), Day (3), Trainer (4), Email (5), Start (6), Finish (7), Class_name (8)
       if (parts.length < 9) return null
       
+      const campus = parts[0] as Campus
+      const locationName = parts[1]
+      const className = parts[8] || campus // Fallback to Campus name if Class_name is empty
+      
       return {
-        campus: parts[0] as Campus,
-        siteName: parts[1],
+        campus,
+        location: locationName,
         unit: parts[2],
         day: parts[3] as Day,
         trainer: parts[4],
         email: parts[5],
         start: parts[6],
         finish: parts[7],
-        roomName: parts[8]
+        roomName: className
       }
     }).filter(Boolean)
   }, [rawInput])
@@ -134,13 +136,11 @@ export default function DataEntryPage() {
         
         if (snapshot.empty) continue;
         
-        // Chunk into batches of 400 (limit is 500)
         for (let i = 0; i < snapshot.docs.length; i += 400) {
           const batch = writeBatch(db);
           const chunk = snapshot.docs.slice(i, i + 400);
           
           for (const docSnapshot of chunk) {
-            // Delete sub-collections for timetables
             if (colName === "timetables") {
               const sessionsRef = collection(db, "timetables", docSnapshot.id, "classSessions");
               const sessionsSnapshot = await getDocs(sessionsRef);
@@ -159,15 +159,15 @@ export default function DataEntryPage() {
       }
 
       toast({ 
-        title: "Database Reset Successful", 
+        title: "Nuclear Wipe Successful", 
         description: `Permanently removed ${totalDeleted} entries.` 
       });
       setRawInput("");
     } catch (e: any) {
       toast({ 
         variant: "destructive", 
-        title: "Wipe Operation Failed", 
-        description: e.message || "A secure database error occurred." 
+        title: "Wipe Failed", 
+        description: e.message 
       });
     } finally {
       setIsProcessing(false)
@@ -185,12 +185,13 @@ export default function DataEntryPage() {
 
     try {
       parsedData.forEach((row: any) => {
-        // Normalize IDs to prevent duplicates
+        // 1. Sanitize IDs
         const teacherId = row.trainer.toLowerCase().trim().replace(/[^a-z0-9]/g, '-')
         const unitId = row.unit.toLowerCase().trim().replace(/[^a-z0-9]/g, '-')
-        const campus = (row.campus || "Online") as Campus
+        const campus = row.campus as Campus
         const roomId = `${campus}-${row.roomName}`.toLowerCase().trim().replace(/[^a-z0-9]/g, '-')
 
+        // 2. Map Teacher
         if (teacherId && !processedTeachers.has(teacherId)) {
           batch.set(doc(db, "teachers", teacherId), { 
             id: teacherId, 
@@ -203,6 +204,7 @@ export default function DataEntryPage() {
           processedTeachers.add(teacherId)
         }
 
+        // 3. Map Unit
         if (unitId && !processedUnits.has(unitId)) {
           batch.set(doc(db, "academicUnits", unitId), { 
             id: unitId, 
@@ -214,24 +216,26 @@ export default function DataEntryPage() {
           processedUnits.add(unitId)
         }
 
+        // 4. Map Room
         if (roomId && !processedRooms.has(roomId)) {
-          const roomType: RoomType = row.siteName.toLowerCase().includes('kitchen') || row.siteName.toLowerCase().includes('workshop') ? 'Workshop' : 'Classroom'
+          const siteAddress = ADDRESS_MAP[row.location] || ADDRESS_MAP[campus] || 'Default Address'
+          const roomType: RoomType = row.location.toLowerCase().includes('kitchen') || row.location.toLowerCase().includes('workshop') ? 'Workshop' : 'Classroom'
+          
           batch.set(doc(db, "rooms", roomId), { 
             id: roomId, 
             name: row.roomName, 
             capacity: 30, 
             campus,
-            siteName: row.siteName,
-            address: row.siteName,
+            siteName: row.location,
+            address: siteAddress,
             type: roomType
           }, { merge: true })
           processedRooms.add(roomId)
         }
 
+        // 5. Map Session
         const startT = parseTime(row.start)
         const finishT = parseTime(row.finish)
-        
-        // Deterministic session ID based on teacher, unit, day, and time to prevent duplicates
         const sessionKey = `${teacherId}-${unitId}-${row.day.toLowerCase()}-${startT.replace(':', '')}`.replace(/[^a-z0-9]/g, '-')
         const sessionId = `s-${sessionKey}`
         
@@ -249,7 +253,7 @@ export default function DataEntryPage() {
       })
 
       await batch.commit()
-      toast({ title: "Sync Complete", description: `Processed ${parsedData.length} records.` })
+      toast({ title: "Synchronization Complete", description: `Updated ${parsedData.length} records across all collections.` })
     } catch (e: any) {
       toast({ variant: "destructive", title: "Sync Failed", description: e.message })
     } finally {
@@ -277,7 +281,7 @@ export default function DataEntryPage() {
       await batch.commit()
       toast({ title: "JSON Update Complete" })
     } catch (e: any) {
-      toast({ variant: "destructive", title: "Invalid JSON" })
+      toast({ variant: "destructive", title: "Invalid JSON Structure" })
     } finally {
       setIsProcessing(false)
     }
@@ -287,8 +291,8 @@ export default function DataEntryPage() {
     <div className="flex-1 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight font-headline text-primary">Data Manager</h2>
-          <p className="text-muted-foreground text-sm">Bulk manage records via Excel or raw JSON access.</p>
+          <h2 className="text-3xl font-bold tracking-tight font-headline text-primary">Data Entry Hub</h2>
+          <p className="text-muted-foreground text-sm">Bulk propagate Teachers, Units, and Rooms via Excel Sync.</p>
         </div>
         <div className="flex gap-2">
            <Button 
@@ -302,39 +306,37 @@ export default function DataEntryPage() {
            {mode === 'excel' ? (
              <Button onClick={handleSyncExcel} disabled={isProcessing || parsedData.length === 0} className="bg-primary">
                {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-               Sync {parsedData.length} Rows
+               Sync {parsedData.length} Records
              </Button>
            ) : (
              <Button onClick={handleSyncJson} disabled={isProcessing} className="bg-primary">
                {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-               Save Raw Data
+               Save JSON
              </Button>
            )}
         </div>
       </div>
 
       <Tabs value={mode} onValueChange={(v: any) => setMode(v)} className="space-y-6">
-        <div className="flex items-center justify-between bg-muted/30 p-1.5 rounded-lg w-fit border">
-          <TabsList className="bg-transparent">
-            <TabsTrigger value="excel" className="gap-2"><FileSpreadsheet className="h-4 w-4" /> Excel Paste</TabsTrigger>
-            <TabsTrigger value="json" className="gap-2"><Code2 className="h-4 w-4" /> Raw JSON Editor</TabsTrigger>
-          </TabsList>
-        </div>
+        <TabsList className="grid w-[400px] grid-cols-2">
+          <TabsTrigger value="excel" className="gap-2"><FileSpreadsheet className="h-4 w-4" /> Excel Sync</TabsTrigger>
+          <TabsTrigger value="json" className="gap-2"><Code2 className="h-4 w-4" /> Raw JSON</TabsTrigger>
+        </TabsList>
 
-        <TabsContent value="excel" className="space-y-6 mt-0">
+        <TabsContent value="excel" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="h-[500px] flex flex-col">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Database className="h-5 w-5 text-primary" />
-                  Excel Copy-Paste Area
+                  Excel Input (9 Columns)
                 </CardTitle>
                 <CardDescription>Format: Campus, Location, Class, Day, Trainer, Email, Start, Finish, Class_name</CardDescription>
               </CardHeader>
-              <CardContent className="flex-1 min-h-0">
+              <CardContent className="flex-1">
                 <Textarea 
-                  placeholder="Ultimo	Level 3, Suite 3.09...	DBC	Wednesday	Bharath	Bharath@novus.edu.au	4:00 PM	10:30 PM	Makalu"
-                  className="font-mono text-[10px] h-full resize-none bg-muted/20 focus:bg-background transition-colors"
+                  placeholder="Example: Ultimo	Ultimo Campus	DBC	Wednesday	Bharath	Bharath@novus.edu.au	4:00 PM	10:30 PM	Makalu"
+                  className="font-mono text-[11px] h-full resize-none bg-muted/20"
                   value={rawInput}
                   onChange={(e) => setRawInput(e.target.value)}
                 />
@@ -345,20 +347,17 @@ export default function DataEntryPage() {
               <CardHeader className="bg-muted/30 border-b">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <TableIcon className="h-5 w-5 text-primary" />
-                  Preview & Mapping
+                  Processing Preview
                 </CardTitle>
-                <CardDescription>Verify columns before syncing.</CardDescription>
               </CardHeader>
               <CardContent className="p-0 overflow-auto flex-1">
                  {parsedData.length > 0 ? (
                    <Table>
-                     <TableHeader className="bg-muted/50 sticky top-0 z-10">
+                     <TableHeader className="bg-muted/50 sticky top-0">
                        <TableRow>
                          <TableHead className="text-[10px]">Campus</TableHead>
-                         <TableHead className="text-[10px]">Subject</TableHead>
                          <TableHead className="text-[10px]">Trainer</TableHead>
-                         <TableHead className="text-[10px]">Day</TableHead>
-                         <TableHead className="text-[10px]">Time</TableHead>
+                         <TableHead className="text-[10px]">Subject</TableHead>
                          <TableHead className="text-[10px]">Room</TableHead>
                        </TableRow>
                      </TableHeader>
@@ -366,19 +365,17 @@ export default function DataEntryPage() {
                        {parsedData.map((row: any, i) => (
                          <TableRow key={i}>
                            <TableCell className="text-[10px] font-bold">{row.campus}</TableCell>
-                           <TableCell className="text-[10px]">{row.unit}</TableCell>
                            <TableCell className="text-[10px]">{row.trainer}</TableCell>
-                           <TableCell className="text-[10px]">{row.day}</TableCell>
-                           <TableCell className="text-[10px] font-mono">{row.start}-{row.finish}</TableCell>
+                           <TableCell className="text-[10px]">{row.unit}</TableCell>
                            <TableCell className="text-[10px] font-black text-primary">{row.roomName}</TableCell>
                          </TableRow>
                        ))}
                      </TableBody>
                    </Table>
                  ) : (
-                   <div className="flex flex-col items-center justify-center h-full text-center px-8 text-muted-foreground">
-                      <FileSpreadsheet className="h-12 w-12 mb-4 opacity-20" />
-                      <p className="text-sm">No spreadsheet data detected.</p>
+                   <div className="flex flex-col items-center justify-center h-full text-muted-foreground italic text-sm">
+                      <FileSpreadsheet className="h-12 w-12 mb-2 opacity-20" />
+                      Paste Excel data to preview
                    </div>
                  )}
               </CardContent>
@@ -386,33 +383,28 @@ export default function DataEntryPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="json" className="space-y-6 mt-0">
-          <Card className="border-primary/20 bg-primary/5">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <div className="space-y-1">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <FileJson className="h-5 w-5 text-primary" />
-                  Raw Data Access
-                </CardTitle>
-              </div>
+        <TabsContent value="json">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Raw Collection Data</CardTitle>
               <Select value={selectedEntity} onValueChange={(v: EntityType) => setSelectedEntity(v)}>
-                <SelectTrigger className="w-[200px] bg-background">
+                <SelectTrigger className="w-[200px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="teachers">Teachers Directory</SelectItem>
-                  <SelectItem value="academicUnits">Units Catalog</SelectItem>
-                  <SelectItem value="rooms">Rooms List</SelectItem>
-                  <SelectItem value="sessions">Class Sessions</SelectItem>
-                  <SelectItem value="rules">Scheduling Rules</SelectItem>
+                  <SelectItem value="teachers">Teachers</SelectItem>
+                  <SelectItem value="academicUnits">Units</SelectItem>
+                  <SelectItem value="rooms">Rooms</SelectItem>
+                  <SelectItem value="sessions">Sessions</SelectItem>
+                  <SelectItem value="rules">Rules</SelectItem>
                 </SelectContent>
               </Select>
             </CardHeader>
-            <CardContent className="pt-6">
+            <CardContent>
               <Textarea 
                 value={jsonInput}
                 onChange={(e) => setJsonInput(e.target.value)}
-                className="font-mono text-[11px] min-h-[600px] bg-black text-green-400 focus:text-green-300"
+                className="font-mono text-[11px] min-h-[600px] bg-black text-green-400"
               />
             </CardContent>
           </Card>
@@ -427,7 +419,7 @@ export default function DataEntryPage() {
               Nuclear Database Wipe
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete ALL documents across ALL collections. This action cannot be undone and will resolve the "sandbox confirm" error.
+              This will permanently delete ALL data across all collections including Teachers, Rooms, and Sessions. This action is irreversible.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
