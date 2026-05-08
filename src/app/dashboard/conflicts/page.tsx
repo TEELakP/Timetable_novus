@@ -15,7 +15,9 @@ import {
   CheckCircle,
   Filter,
   BookOpen,
-  Settings2
+  Settings2,
+  Trash2,
+  XCircle
 } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -32,12 +34,22 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc } from "firebase/firestore"
+import { collection, doc, writeBatch } from "firebase/firestore"
 import { TimetableEntry, Teacher, Unit, Room } from "@/lib/types"
 import { DAYS, CAMPUSES } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
-import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 
@@ -135,6 +147,8 @@ export default function ConflictsPage() {
   const { toast } = useToast()
   const db = useFirestore()
   const [selectedConflict, setSelectedConflict] = useState<ConflictItem | null>(null)
+  const [isPurging, setIsPurging] = useState(false)
+  const [isPurgeDialogOpen, setIsPurgeDialogOpen] = useState(false)
   
   const teachersRef = useMemoFirebase(() => collection(db, "teachers"), [db])
   const unitsRef = useMemoFirebase(() => collection(db, "academicUnits"), [db])
@@ -249,13 +263,41 @@ export default function ConflictsPage() {
     return data
   }, [rawConflicts, selectedDays, selectedTeachers, selectedUnits])
 
-  const handleResolveConflict = () => {
+  const handlePurgeUnassigned = async () => {
+    if (!sessions) return
+    setIsPurging(true)
+    const batch = writeBatch(db)
+    
+    const unassignedSessions = sessions.filter(s => {
+      const isPlaceholder = s.teacherId.toLowerCase().includes('unassigned') || 
+                          s.teacherId.toLowerCase().includes('n/a') || 
+                          s.teacherId.trim() === ''
+      const teacher = teachers?.find(t => t.id === s.teacherId)
+      return isPlaceholder || !teacher
+    })
+
+    try {
+      unassignedSessions.forEach(s => {
+        const ref = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id)
+        batch.delete(ref)
+      })
+      await batch.commit()
+      toast({ title: "Purge Complete", description: `Removed ${unassignedSessions.length} unassigned sessions.` })
+    } catch (e) {
+      toast({ variant: "destructive", title: "Purge Failed" })
+    } finally {
+      setIsPurging(false)
+      setIsPurgeDialogOpen(false)
+    }
+  }
+
+  const handleDeleteConflictSessions = () => {
     if (!selectedConflict) return
     selectedConflict.involvedSessionIds.forEach(sessionId => {
       const sessionRef = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionId)
-      setDocumentNonBlocking(sessionRef, { acknowledged: true }, { merge: true })
+      deleteDocumentNonBlocking(sessionRef)
     })
-    toast({ title: "Conflict Resolved" })
+    toast({ title: "Conflict Entries Removed" })
     setSelectedConflict(null)
   }
 
@@ -267,13 +309,26 @@ export default function ConflictsPage() {
     )
   }
 
+  const unassignedCount = rawConflicts.filter(c => c.type === 'missing-resource').length
+
   return (
     <div className="flex-1 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Conflict Monitor</h2>
-          <p className="text-muted-foreground text-sm">Review resource integrity and manually resolve overlapping or unassigned schedules.</p>
+          <p className="text-muted-foreground text-sm">Review resource integrity and remove overlapping or unassigned schedules.</p>
         </div>
+        {unassignedCount > 0 && (
+          <Button 
+            variant="destructive" 
+            size="sm" 
+            onClick={() => setIsPurgeDialogOpen(true)}
+            disabled={isPurging}
+          >
+            {isPurging ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+            Purge {unassignedCount} Unassigned
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3 bg-muted/30 p-4 rounded-xl border border-border/50">
@@ -386,13 +441,50 @@ export default function ConflictsPage() {
         </Card>
       </div>
 
+      <AlertDialog open={isPurgeDialogOpen} onOpenChange={setIsPurgeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Purge All Unassigned Sessions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {unassignedCount} sessions that currently have no trainer assigned. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handlePurgeUnassigned} className="bg-destructive text-destructive-foreground">
+              Confirm Purge
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Dialog open={!!selectedConflict} onOpenChange={(open) => !open && setSelectedConflict(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Conflict Detail</DialogTitle></DialogHeader>
-          <div className="py-4 text-sm text-muted-foreground">
-            {selectedConflict?.details}
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Conflict Detail
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="text-sm text-muted-foreground">
+              {selectedConflict?.details}
+            </div>
+            <div className="bg-muted p-3 rounded-lg text-xs space-y-1">
+              <p className="font-bold uppercase tracking-tight text-[10px] text-muted-foreground">Sessions Involved:</p>
+              {selectedConflict?.involvedSessionIds.map(sid => (
+                <div key={sid} className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[9px]">{sid}</Badge>
+                </div>
+              ))}
+            </div>
           </div>
-          <DialogFooter><Button onClick={handleResolveConflict}>Acknowledge & Resolve</Button></DialogFooter>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setSelectedConflict(null)}>Close</Button>
+            <Button variant="destructive" onClick={handleDeleteConflictSessions}>
+              <Trash2 className="mr-2 h-4 w-4" /> Delete Involved Sessions
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
