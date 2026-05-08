@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { 
   Plus, 
   Search, 
@@ -17,7 +17,9 @@ import {
   AlertTriangle,
   Edit2,
   Settings2,
-  CheckCircle2
+  CheckCircle2,
+  X,
+  AlertCircle
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -30,6 +32,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -41,7 +44,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { CAMPUSES, DAYS } from "@/lib/mock-data"
-import { Teacher, Campus, Unit, Room, TimetableEntry, Day } from "@/lib/types"
+import { Teacher, Campus, Unit, Room, TimetableEntry, Day, TeacherAvailability } from "@/lib/types"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
 import { setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
@@ -157,6 +160,7 @@ export default function TeachersPage() {
   // Edit Profile State
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
   const [editingTeacherData, setEditingTeacherData] = useState<Teacher | null>(null)
+  const [newAvail, setNewAvail] = useState<TeacherAvailability>({ day: 'Monday', startTime: '09:00', endTime: '17:00' })
 
   // Session Edit/Add State
   const [editingSession, setEditingSession] = useState<TimetableEntry | null>(null)
@@ -169,6 +173,7 @@ export default function TeachersPage() {
     endTime: "11:00",
     room: ""
   })
+  const [conflictWarning, setConflictWarning] = useState<string | null>(null)
 
   // Room Creation State
   const [isRoomDialogOpen, setIsRoomDialogOpen] = useState(false)
@@ -209,12 +214,52 @@ export default function TeachersPage() {
       })
   }, [selectedTeacherForDetail, sessions])
 
-  // Filter units to only those the current teacher is qualified for
   const qualifiedUnitsList = useMemo(() => {
     if (!selectedTeacherForDetail || !units) return []
     return units.filter(u => selectedTeacherForDetail.qualifiedUnits.includes(u.id))
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [selectedTeacherForDetail, units])
+
+  // Conflict validation for adding a session
+  useEffect(() => {
+    if (!isAddSessionOpen || !selectedTeacherForDetail) {
+      setConflictWarning(null)
+      return
+    }
+
+    const { day, startTime, endTime } = newSessionData
+    if (!startTime || !endTime) return
+
+    let warning = ""
+
+    // 1. Availability Check
+    const teacherAvails = selectedTeacherForDetail.availability || []
+    const dayAvails = teacherAvails.filter(a => a.day === day)
+    
+    const isWithinAvailability = dayAvails.some(a => {
+      return startTime >= a.startTime && endTime <= a.endTime
+    })
+
+    if (dayAvails.length > 0 && !isWithinAvailability) {
+      warning += "Teacher is not available during this time slot. "
+    } else if (dayAvails.length === 0 && teacherAvails.length > 0) {
+      warning += `Teacher has no availability defined for ${day}. `
+    }
+
+    // 2. Overlap Check
+    const existingSessions = sessions?.filter(s => s.teacherId === selectedTeacherForDetail.id && s.day === day) || []
+    const hasOverlap = existingSessions.some(s => {
+      return (startTime >= s.startTime && startTime < s.endTime) ||
+             (endTime > s.startTime && endTime <= s.endTime) ||
+             (startTime <= s.startTime && endTime >= s.endTime)
+    })
+
+    if (hasOverlap) {
+      warning += "Teacher is already teaching another class during this time. "
+    }
+
+    setConflictWarning(warning || null)
+  }, [newSessionData, selectedTeacherForDetail, sessions, isAddSessionOpen])
 
   const [isSingleOpen, setIsSingleOpen] = useState(false)
   const [newTeacherName, setNewTeacherName] = useState("")
@@ -265,11 +310,15 @@ export default function TeachersPage() {
       ...newSessionData,
       id,
       teacherId: selectedTeacherForDetail.id,
-      acknowledged: false
+      acknowledged: false,
+      isConflict: !!conflictWarning
     }
     setDocumentNonBlocking(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", id), sessionData, { merge: true })
     setIsAddSessionOpen(false)
-    toast({ title: "Session Added" })
+    toast({ 
+      title: conflictWarning ? "Session Added with Conflicts" : "Session Added",
+      variant: conflictWarning ? "destructive" : "default"
+    })
   }
 
   const handleSaveProfile = () => {
@@ -278,7 +327,7 @@ export default function TeachersPage() {
     setDocumentNonBlocking(teacherRef, editingTeacherData, { merge: true })
     setSelectedTeacherForDetail(editingTeacherData)
     setIsEditProfileOpen(false)
-    toast({ title: "Profile Updated", description: "Teacher qualifications and campuses updated." })
+    toast({ title: "Profile Updated", description: "Teacher details saved." })
   }
 
   const confirmDelete = () => {
@@ -302,38 +351,11 @@ export default function TeachersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Faculty Directory</h2>
-          <p className="text-muted-foreground text-sm">Manage faculty profiles and view individual class schedules.</p>
+          <p className="text-muted-foreground text-sm">Manage profiles, availability, and view individual class schedules.</p>
         </div>
         <div className="flex gap-2">
-          <Dialog open={isRoomDialogOpen} onOpenChange={setIsRoomDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline"><DoorOpen className="mr-2 h-4 w-4" /> Add Room</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>New Classroom</DialogTitle></DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Room Name</Label>
-                  <Input value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder="e.g. Room 301" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Campus</Label>
-                  <Select value={newRoomCampus} onValueChange={(v: Campus) => setNewRoomCampus(v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button onClick={handleAddRoom} disabled={!newRoomName.trim()}>Save Classroom</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          <Button onClick={() => setIsSingleOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> New Teacher
-          </Button>
+          <Button variant="outline" onClick={() => setIsRoomDialogOpen(true)}><DoorOpen className="mr-2 h-4 w-4" /> Add Room</Button>
+          <Button onClick={() => setIsSingleOpen(true)}><Plus className="mr-2 h-4 w-4" /> New Teacher</Button>
         </div>
       </div>
 
@@ -395,7 +417,7 @@ export default function TeachersPage() {
             <TableHeader className="bg-muted/30">
               <TableRow>
                 <TableHead>Teacher Name & Email</TableHead>
-                <TableHead>Qualified Units</TableHead>
+                <TableHead>Qualifications</TableHead>
                 <TableHead>Campuses</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -421,7 +443,7 @@ export default function TeachersPage() {
                         const u = units?.find(unit => unit.id === uid)
                         return <Badge key={uid} variant="secondary" className="text-[10px]">{u?.name || uid}</Badge>
                       })}
-                      {teacher.qualifiedUnits.length === 0 && <span className="text-[10px] text-muted-foreground italic">No qualifications listed</span>}
+                      {teacher.qualifiedUnits.length === 0 && <span className="text-[10px] text-muted-foreground italic">No qualifications</span>}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -438,13 +460,6 @@ export default function TeachersPage() {
                   </TableCell>
                 </TableRow>
               ))}
-              {filteredTeachers.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
-                    No faculty members found matching filters.
-                  </TableCell>
-                </TableRow>
-              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -459,8 +474,7 @@ export default function TeachersPage() {
               Confirm Deletion
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you absolutely sure you want to delete this trainer? This will remove their faculty profile permanently. 
-              Scheduled sessions assigned to this trainer will remain but may appear as unassigned.
+              Are you sure you want to delete this trainer? This will remove their faculty profile permanently.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -474,7 +488,7 @@ export default function TeachersPage() {
 
       {/* Teacher Detail Modal */}
       <Dialog open={!!selectedTeacherForDetail} onOpenChange={(open) => !open && setSelectedTeacherForDetail(null)}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-center justify-between w-full pr-8">
               <div className="flex flex-col">
@@ -491,7 +505,7 @@ export default function TeachersPage() {
                   setEditingTeacherData(selectedTeacherForDetail)
                   setIsEditProfileOpen(true)
                 }}>
-                  <Settings2 className="h-4 w-4 mr-1" /> Edit Profile
+                  <Settings2 className="h-4 w-4 mr-1" /> Edit Profile & Avail.
                 </Button>
                 <Button onClick={() => setIsAddSessionOpen(true)} size="sm">
                   <Plus className="h-4 w-4 mr-1" /> Add Session
@@ -500,65 +514,74 @@ export default function TeachersPage() {
             </div>
           </DialogHeader>
           
-          <div className="py-4">
-            <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4 border-b pb-2">Assigned Classes</h4>
-            <div className="max-h-[400px] overflow-y-auto rounded-md border">
-              <Table>
-                <TableHeader className="bg-muted/50 sticky top-0">
-                  <TableRow>
-                    <TableHead>Day & Time</TableHead>
-                    <TableHead>Academic Unit</TableHead>
-                    <TableHead>Location</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {teacherSessions.map((session) => {
-                    const unit = units?.find(u => u.id === session.unitId)
-                    return (
-                      <TableRow key={session.id}>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="font-bold text-xs">{session.day}</span>
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                              <Clock className="h-2.5 w-2.5" /> {session.startTime} - {session.endTime}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="text-sm font-semibold">{unit?.name || 'Unknown Unit'}</span>
-                            <Badge variant="secondary" className="w-fit text-[9px] h-4 uppercase">
-                              {unit?.type || 'Theory'}
-                            </Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-xs max-w-[200px] truncate">{session.room}</TableCell>
-                        <TableCell className="text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8"
-                            onClick={() => {
-                              setEditingSession(session)
-                              setNewRoomForSession(session.room)
-                            }}
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                  {teacherSessions.length === 0 && (
+          <div className="py-4 space-y-6">
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
+                <Clock className="h-3 w-3" /> Weekly Availability
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {selectedTeacherForDetail?.availability?.map((avail, i) => (
+                  <Badge key={i} variant="secondary" className="bg-green-50 text-green-700 border-green-200">
+                    {avail.day}: {avail.startTime}-{avail.endTime}
+                  </Badge>
+                ))}
+                {(!selectedTeacherForDetail?.availability || selectedTeacherForDetail.availability.length === 0) && (
+                  <span className="text-xs text-muted-foreground italic">No availability slots defined. Defaulting to 24/7.</span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
+                <CalendarDays className="h-3 w-3" /> Assigned Classes
+              </h4>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader className="bg-muted/50">
                     <TableRow>
-                      <TableCell colSpan={4} className="h-24 text-center text-muted-foreground italic">
-                        No sessions currently scheduled for this trainer.
-                      </TableCell>
+                      <TableHead>Day & Time</TableHead>
+                      <TableHead>Academic Unit</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {teacherSessions.map((session) => {
+                      const unit = units?.find(u => u.id === session.unitId)
+                      return (
+                        <TableRow key={session.id}>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="font-bold text-xs">{session.day}</span>
+                              <span className="text-[10px] text-muted-foreground">{session.startTime} - {session.endTime}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="text-sm font-semibold">{unit?.name || 'Unknown Unit'}</span>
+                              {session.isConflict && <Badge variant="destructive" className="w-fit text-[8px] h-3 uppercase p-0.5 px-1">Conflict</Badge>}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs">{session.room}</TableCell>
+                          <TableCell className="text-right">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              onClick={() => {
+                                setEditingSession(session)
+                                setNewRoomForSession(session.room)
+                              }}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -567,18 +590,60 @@ export default function TeachersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Profile Dialog */}
+      {/* Edit Profile & Availability Dialog */}
       <Dialog open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Trainer Profile: {editingTeacherData?.name}</DialogTitle>
-            <DialogDescription>Assign teacher to specific academic units and campuses.</DialogDescription>
+            <DialogTitle>Edit Profile: {editingTeacherData?.name}</DialogTitle>
+            <DialogDescription>Manage qualifications, assigned campuses, and weekly availability slots.</DialogDescription>
           </DialogHeader>
           {editingTeacherData && (
-            <div className="space-y-6 py-4">
+            <div className="space-y-8 py-4">
               <div className="space-y-3">
-                <Label className="text-base">Qualified Units</Label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 p-4 border rounded-lg max-h-[250px] overflow-y-auto bg-muted/20">
+                <Label className="text-sm font-bold uppercase">Weekly Availability Slots</Label>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end bg-muted/20 p-3 rounded-lg border border-dashed">
+                  <div className="space-y-1">
+                    <Label className="text-[10px]">Day</Label>
+                    <Select value={newAvail.day} onValueChange={(v: Day) => setNewAvail({...newAvail, day: v})}>
+                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px]">Start</Label>
+                    <Input type="time" className="h-8" value={newAvail.startTime} onChange={e => setNewAvail({...newAvail, startTime: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px]">End</Label>
+                    <Input type="time" className="h-8" value={newAvail.endTime} onChange={e => setNewAvail({...newAvail, endTime: e.target.value})} />
+                  </div>
+                  <Button size="sm" className="h-8" onClick={() => {
+                    const currentAvails = editingTeacherData.availability || []
+                    setEditingTeacherData({...editingTeacherData, availability: [...currentAvails, newAvail]})
+                  }}>
+                    Add Slot
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {editingTeacherData.availability?.map((a, i) => (
+                    <Badge key={i} variant="secondary" className="flex items-center gap-1.5 px-2 py-1">
+                      {a.day}: {a.startTime}-{a.endTime}
+                      <button onClick={() => {
+                        const newList = editingTeacherData.availability.filter((_, idx) => idx !== i)
+                        setEditingTeacherData({...editingTeacherData, availability: newList})
+                      }}>
+                        <X className="h-3 w-3 hover:text-destructive" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-sm font-bold uppercase">Qualified Units</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 p-4 border rounded-lg max-h-[200px] overflow-y-auto bg-muted/20">
                   {units?.sort((a,b) => a.name.localeCompare(b.name)).map(unit => (
                     <div key={unit.id} className="flex items-center space-x-2">
                       <Checkbox 
@@ -591,7 +656,7 @@ export default function TeachersPage() {
                           setEditingTeacherData({...editingTeacherData, qualifiedUnits: newList})
                         }}
                       />
-                      <label htmlFor={`edit-unit-${unit.id}`} className="text-sm font-medium leading-none cursor-pointer">
+                      <label htmlFor={`edit-unit-${unit.id}`} className="text-xs font-medium cursor-pointer">
                         {unit.name}
                       </label>
                     </div>
@@ -600,7 +665,7 @@ export default function TeachersPage() {
               </div>
 
               <div className="space-y-3">
-                <Label className="text-base">Assigned Campuses</Label>
+                <Label className="text-sm font-bold uppercase">Assigned Campuses</Label>
                 <div className="flex flex-wrap gap-4 p-4 border rounded-lg bg-muted/20">
                   {CAMPUSES.map(campus => (
                     <div key={campus} className="flex items-center space-x-2">
@@ -614,7 +679,7 @@ export default function TeachersPage() {
                           setEditingTeacherData({...editingTeacherData, campuses: newList})
                         }}
                       />
-                      <label htmlFor={`edit-campus-${campus}`} className="text-sm font-medium leading-none cursor-pointer">
+                      <label htmlFor={`edit-campus-${campus}`} className="text-xs font-medium cursor-pointer">
                         {campus}
                       </label>
                     </div>
@@ -626,25 +691,33 @@ export default function TeachersPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditProfileOpen(false)}>Cancel</Button>
             <Button onClick={handleSaveProfile} className="gap-2">
-              <CheckCircle2 className="h-4 w-4" /> Save Assignments
+              <CheckCircle2 className="h-4 w-4" /> Save Profile
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* New Session Dialog for Specific Teacher */}
+      {/* New Session Dialog with Conflict Detection */}
       <Dialog open={isAddSessionOpen} onOpenChange={setIsAddSessionOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Session for {selectedTeacherForDetail?.name}</DialogTitle>
-            <DialogDescription>Note: Only qualified units for this trainer are shown.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            {conflictWarning && (
+              <Alert variant="destructive" className="py-2">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle className="text-xs">Scheduling Conflict</AlertTitle>
+                <AlertDescription className="text-[10px]">
+                  {conflictWarning} You can still save, but this will be marked as a conflict.
+                </AlertDescription>
+              </Alert>
+            )}
             <div className="grid gap-2">
               <Label>Subject (Qualified Only)</Label>
               <Select value={newSessionData.unitId} onValueChange={(v) => setNewSessionData({...newSessionData, unitId: v})}>
                 <SelectTrigger>
-                  <SelectValue placeholder={qualifiedUnitsList.length > 0 ? "Select Qualified Unit" : "No qualifications assigned"} />
+                  <SelectValue placeholder="Select Qualified Unit" />
                 </SelectTrigger>
                 <SelectContent>
                   {qualifiedUnitsList.map(u => (
@@ -652,11 +725,6 @@ export default function TeachersPage() {
                   ))}
                 </SelectContent>
               </Select>
-              {qualifiedUnitsList.length === 0 && (
-                <p className="text-[10px] text-destructive font-bold uppercase">
-                  Error: Assign qualifications in "Edit Profile" first.
-                </p>
-              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
@@ -693,37 +761,28 @@ export default function TeachersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddSessionOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddSessionToTeacher} disabled={!newSessionData.unitId || qualifiedUnitsList.length === 0}>
+            <Button onClick={handleAddSessionToTeacher} disabled={!newSessionData.unitId}>
               Save Session
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Session Edit Dialog */}
+      {/* Session Room Edit Dialog */}
       <Dialog open={!!editingSession} onOpenChange={(open) => !open && setEditingSession(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Edit Session Classroom</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Edit Session Location</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Select Existing Room</Label>
+              <Label>Select Room</Label>
               <Select value={newRoomForSession} onValueChange={setNewRoomForSession}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {rooms?.sort((a,b) => a.name.localeCompare(b.name)).map(r => (
                     <SelectItem key={r.id} value={r.name}>{r.name} ({r.campus})</SelectItem>
                   ))}
-                  <SelectItem value="Other">Custom Location...</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Manual Entry (or Custom)</Label>
-              <Input 
-                value={newRoomForSession} 
-                onChange={e => setNewRoomForSession(e.target.value)}
-                placeholder="Type location manually..."
-              />
             </div>
           </div>
           <DialogFooter>
@@ -740,14 +799,39 @@ export default function TeachersPage() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Full Name</Label>
-              <Input placeholder="e.g. John Doe" value={newTeacherName} onChange={e => setNewTeacherName(e.target.value)} />
+              <Input placeholder="e.g. Jane Smith" value={newTeacherName} onChange={e => setNewTeacherName(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label>Professional Email</Label>
-              <Input type="email" placeholder="johndoe@novus.edu.au" value={newTeacherEmail} onChange={e => setNewTeacherEmail(e.target.value)} />
+              <Input type="email" placeholder="j.smith@novus.edu.au" value={newTeacherEmail} onChange={e => setNewTeacherEmail(e.target.value)} />
             </div>
           </div>
           <DialogFooter><Button onClick={handleSingleAdd}>Save Teacher</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Room Creation Dialog */}
+      <Dialog open={isRoomDialogOpen} onOpenChange={setIsRoomDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>New Classroom</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Room Name</Label>
+              <Input value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder="e.g. Room 301" />
+            </div>
+            <div className="space-y-2">
+              <Label>Campus</Label>
+              <Select value={newRoomCampus} onValueChange={(v: Campus) => setNewRoomCampus(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleAddRoom} disabled={!newRoomName.trim()}>Save Classroom</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
