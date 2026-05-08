@@ -54,7 +54,7 @@ interface ConflictItem {
   time: string
   involvedSessionIds: string[]
   teacherId?: string
-  unitId?: string // Specifically for qualification fix
+  unitId?: string 
 }
 
 function MultiSelectFilter({ 
@@ -172,7 +172,35 @@ export default function ConflictsPage() {
 
       // --- HIGH LEVEL CONFLICTS ---
 
-      // 1. Trainer Qualification Check
+      // 1. Availability Check
+      if (teacher && teacher.availability && teacher.availability.length > 0) {
+        const dayAvails = teacher.availability.filter(a => a.day === s.day)
+        const isWithinAvailability = dayAvails.some(a => {
+          return s.startTime >= a.startTime && s.endTime <= a.endTime
+        })
+
+        if (!isWithinAvailability) {
+          const aid = `avail-${s.id}`
+          if (!addedConflictIds.has(aid)) {
+            conflicts.push({
+              id: aid,
+              level: 'high',
+              type: 'Availability Conflict',
+              message: `${teacher.name} is scheduled outside their availability`,
+              details: dayAvails.length === 0 
+                ? `Teacher has no availability defined for ${s.day}.` 
+                : `The session ${s.startTime}-${s.endTime} falls outside the teacher's availability slots on ${s.day}.`,
+              day: s.day,
+              time: s.startTime,
+              involvedSessionIds: [s.id],
+              teacherId: s.teacherId
+            })
+            addedConflictIds.add(aid)
+          }
+        }
+      }
+
+      // 2. Trainer Qualification Check
       if (teacher && unit && !teacher.qualifiedUnits.includes(unit.id)) {
         const qid = `qual-${s.id}`
         if (!addedConflictIds.has(qid)) {
@@ -192,11 +220,11 @@ export default function ConflictsPage() {
         }
       }
 
-      // 2. Double Booking Detection (Trainer & Room)
+      // 3. Double Booking Detection (Trainer & Room)
       const startH = parseInt(s.startTime.split(':')[0])
-      const endH = parseInt(s.endTime.split(':')[0]) || 24
+      const finishH = parseInt(s.endTime.split(':')[0]) || 24
       
-      for (let h = startH; h < endH; h++) {
+      for (let h = startH; h < finishH; h++) {
         const slotKey = `${s.day}-${h.toString().padStart(2, '0')}:00`
         
         // Trainer Overlap
@@ -252,7 +280,7 @@ export default function ConflictsPage() {
 
       // --- MID LEVEL CONFLICTS ---
 
-      // 3. Gosford After-Hours Rule
+      // 4. Gosford After-Hours Rule
       if (s.campus === 'Gosford') {
         const finishH = parseInt(s.endTime.split(':')[0])
         if (finishH >= 17) {
@@ -273,7 +301,7 @@ export default function ConflictsPage() {
         }
       }
 
-      // 4. Capacity vs Type Check
+      // 5. Capacity vs Type Check
       if (room && unit) {
         const isPractical = unit.type === 'practical'
         const limit = isPractical ? 20 : 30
@@ -297,7 +325,7 @@ export default function ConflictsPage() {
 
       // --- LOW LEVEL CONFLICTS ---
 
-      // 5. Merge Opportunity Check
+      // 6. Merge Opportunity Check
       const mergeKey = `${unit?.id}-${s.day}-${s.startTime}`
       if (!unitMergeCheck[mergeKey]) unitMergeCheck[mergeKey] = []
       const potentialMerge = unitMergeCheck[mergeKey].find(m => m.room !== s.room)
@@ -463,6 +491,7 @@ export default function ConflictsPage() {
                </CardTitle>
              </CardHeader>
              <CardContent className="text-[11px] space-y-2 text-muted-foreground leading-relaxed">
+               <p><strong>Availability:</strong> Checks trainer JotForm entries. Redundant classes are flagged.</p>
                <p><strong>Gosford:</strong> No classes after 5 PM due to local bus limitations.</p>
                <p><strong>Capacity:</strong> Theory classes limited to 30. Practical classes limited to 20.</p>
                <p><strong>Fast Track:</strong> Overlaps strictly monitored for dual-enrolled students.</p>
