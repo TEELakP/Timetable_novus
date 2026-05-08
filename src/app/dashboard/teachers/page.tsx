@@ -209,6 +209,13 @@ export default function TeachersPage() {
       })
   }, [selectedTeacherForDetail, sessions])
 
+  // Filter units to only those the current teacher is qualified for
+  const qualifiedUnitsList = useMemo(() => {
+    if (!selectedTeacherForDetail || !units) return []
+    return units.filter(u => selectedTeacherForDetail.qualifiedUnits.includes(u.id))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [selectedTeacherForDetail, units])
+
   const [isSingleOpen, setIsSingleOpen] = useState(false)
   const [newTeacherName, setNewTeacherName] = useState("")
   const [newTeacherEmail, setNewTeacherEmail] = useState("")
@@ -289,13 +296,6 @@ export default function TeachersPage() {
       </div>
     )
   }
-
-  // Filter units to only those the current teacher is qualified for
-  const qualifiedUnitsList = useMemo(() => {
-    if (!selectedTeacherForDetail || !units) return []
-    return units.filter(u => selectedTeacherForDetail.qualifiedUnits.includes(u.id))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [selectedTeacherForDetail, units])
 
   return (
     <div className="flex-1 space-y-4">
