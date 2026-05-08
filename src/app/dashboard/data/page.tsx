@@ -108,7 +108,7 @@ export default function DataEntryPage() {
     
     return lines.map((line) => {
       const parts = line.split('\t').map(p => p.trim())
-      // 8-column format: Location (0), Class (1), Day (2), Trainer (3), Email (4), Start (5), Finish (6), Class_name (7)
+      // 8-column format: Location, Class, Day, Trainer, Email, Start, Finish, Class_name
       if (parts.length < 8) return null
       
       const location = parts[0]

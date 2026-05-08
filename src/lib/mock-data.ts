@@ -15,7 +15,8 @@ export const ADDRESS_MAP: Record<string, string> = {
   'Gosford Kitchen': '5/131 Henry Parry Drive, Gosford',
   'Ultimo Workshop (Automotive)': '145 Gilba Road, Girraween NSW',
   'Gosford Workshop': '2/3 Luke Close, west Gosford',
-  'Ultimo Workshop (Trade)': '8 Kendall St, Granville NSW'
+  'Ultimo Workshop (Trade)': '8 Kendall St, Granville NSW',
+  'Perth Workshop': 'Unit 53 188 Newcastle St, PERTH WA 6000 (Practical Annex)'
 };
 
 // Configuration for site hierarchy
@@ -73,6 +74,12 @@ export const SITES_CONFIG = {
       address: ADDRESS_MAP['Perth Campus'],
       rooms: ['P1', 'P2', 'P3', 'P4'],
       type: 'Classroom'
+    },
+    {
+      name: 'Perth Workshop',
+      address: ADDRESS_MAP['Perth Workshop'],
+      rooms: ['Workshop P-Alpha'],
+      type: 'Workshop'
     }
   ],
   Online: [
