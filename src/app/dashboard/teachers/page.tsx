@@ -164,7 +164,6 @@ export default function TeachersPage() {
 
   // Session Edit/Add State
   const [editingSession, setEditingSession] = useState<TimetableEntry | null>(null)
-  const [newRoomForSession, setNewRoomForSession] = useState("")
   const [isAddSessionOpen, setIsAddSessionOpen] = useState(false)
   const [newSessionData, setNewSessionData] = useState({
     unitId: "",
@@ -220,15 +219,9 @@ export default function TeachersPage() {
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [selectedTeacherForDetail, units])
 
-  // Conflict validation for adding a session
-  useEffect(() => {
-    if (!isAddSessionOpen || !selectedTeacherForDetail) {
-      setConflictWarning(null)
-      return
-    }
-
-    const { day, startTime, endTime } = newSessionData
-    if (!startTime || !endTime) return
+  // Conflict validation helper
+  const checkConflicts = (day: string, startTime: string, endTime: string, currentSessionId?: string) => {
+    if (!selectedTeacherForDetail || !startTime || !endTime) return null
 
     let warning = ""
 
@@ -247,7 +240,11 @@ export default function TeachersPage() {
     }
 
     // 2. Overlap Check
-    const existingSessions = sessions?.filter(s => s.teacherId === selectedTeacherForDetail.id && s.day === day) || []
+    const existingSessions = sessions?.filter(s => 
+      s.teacherId === selectedTeacherForDetail.id && 
+      s.day === day && 
+      s.id !== currentSessionId
+    ) || []
     const hasOverlap = existingSessions.some(s => {
       return (startTime >= s.startTime && startTime < s.endTime) ||
              (endTime > s.startTime && endTime <= s.endTime) ||
@@ -258,8 +255,19 @@ export default function TeachersPage() {
       warning += "Teacher is already teaching another class during this time. "
     }
 
-    setConflictWarning(warning || null)
-  }, [newSessionData, selectedTeacherForDetail, sessions, isAddSessionOpen])
+    return warning || null
+  }
+
+  // Effect for live warnings
+  useEffect(() => {
+    if (isAddSessionOpen) {
+      setConflictWarning(checkConflicts(newSessionData.day, newSessionData.startTime, newSessionData.endTime))
+    } else if (editingSession) {
+      setConflictWarning(checkConflicts(editingSession.day, editingSession.startTime, editingSession.endTime, editingSession.id))
+    } else {
+      setConflictWarning(null)
+    }
+  }, [newSessionData, editingSession, selectedTeacherForDetail, sessions, isAddSessionOpen])
 
   const [isSingleOpen, setIsSingleOpen] = useState(false)
   const [newTeacherName, setNewTeacherName] = useState("")
@@ -295,12 +303,15 @@ export default function TeachersPage() {
     toast({ title: "Room Created", description: `${newRoomName} added to directory.` })
   }
 
-  const handleUpdateSessionRoom = () => {
+  const handleUpdateSession = () => {
     if (!editingSession) return
     const sessionRef = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", editingSession.id)
-    updateDocumentNonBlocking(sessionRef, { room: newRoomForSession })
+    updateDocumentNonBlocking(sessionRef, { 
+      ...editingSession,
+      isConflict: !!conflictWarning
+    })
     setEditingSession(null)
-    toast({ title: "Session Updated", description: "Classroom assignment changed." })
+    toast({ title: "Session Updated" })
   }
 
   const handleAddSessionToTeacher = () => {
@@ -507,7 +518,16 @@ export default function TeachersPage() {
                 }}>
                   <Settings2 className="h-4 w-4 mr-1" /> Edit Profile & Avail.
                 </Button>
-                <Button onClick={() => setIsAddSessionOpen(true)} size="sm">
+                <Button onClick={() => {
+                  setNewSessionData({
+                    unitId: "",
+                    day: "Monday",
+                    startTime: "09:00",
+                    endTime: "11:00",
+                    room: ""
+                  })
+                  setIsAddSessionOpen(true)
+                }} size="sm">
                   <Plus className="h-4 w-4 mr-1" /> Add Session
                 </Button>
               </div>
@@ -568,10 +588,7 @@ export default function TeachersPage() {
                               variant="ghost" 
                               size="icon" 
                               className="h-8 w-8"
-                              onClick={() => {
-                                setEditingSession(session)
-                                setNewRoomForSession(session.room)
-                              }}
+                              onClick={() => setEditingSession(session)}
                             >
                               <Edit2 className="h-4 w-4" />
                             </Button>
@@ -768,26 +785,69 @@ export default function TeachersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Session Room Edit Dialog */}
+      {/* Full Session Edit Dialog */}
       <Dialog open={!!editingSession} onOpenChange={(open) => !open && setEditingSession(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Edit Session Location</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Select Room</Label>
-              <Select value={newRoomForSession} onValueChange={setNewRoomForSession}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {rooms?.sort((a,b) => a.name.localeCompare(b.name)).map(r => (
-                    <SelectItem key={r.id} value={r.name}>{r.name} ({r.campus})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <DialogHeader><DialogTitle>Edit Class Session</DialogTitle></DialogHeader>
+          {editingSession && (
+            <div className="grid gap-4 py-4">
+               {conflictWarning && (
+                <Alert variant="destructive" className="py-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle className="text-xs">Scheduling Conflict</AlertTitle>
+                  <AlertDescription className="text-[10px]">
+                    {conflictWarning}
+                  </AlertDescription>
+                </Alert>
+              )}
+              <div className="grid gap-2">
+                <Label>Subject (Qualified Only)</Label>
+                <Select value={editingSession.unitId} onValueChange={(v) => setEditingSession({...editingSession, unitId: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {qualifiedUnitsList.map(u => (
+                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Day</Label>
+                  <Select value={editingSession.day} onValueChange={(v: Day) => setEditingSession({...editingSession, day: v})}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Location</Label>
+                  <Select value={editingSession.room} onValueChange={(v) => setEditingSession({...editingSession, room: v})}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {rooms?.sort((a,b) => a.name.localeCompare(b.name)).map(r => (
+                        <SelectItem key={r.id} value={r.name}>{r.name} ({r.campus})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Start Time</Label>
+                  <Input type="time" value={editingSession.startTime} onChange={e => setEditingSession({...editingSession, startTime: e.target.value})} />
+                </div>
+                <div className="grid gap-2">
+                  <Label>End Time</Label>
+                  <Input type="time" value={editingSession.endTime} onChange={e => setEditingSession({...editingSession, endTime: e.target.value})} />
+                </div>
+              </div>
             </div>
-          </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingSession(null)}>Cancel</Button>
-            <Button onClick={handleUpdateSessionRoom}>Apply Change</Button>
+            <Button onClick={handleUpdateSession}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
