@@ -13,11 +13,12 @@ import {
   Clock,
   Filter,
   BookOpen,
-  Trash2,
   AlertCircle,
   TrendingUp,
   Zap,
-  ArrowRight
+  ArrowRight,
+  ShieldCheck,
+  EyeOff
 } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -38,22 +39,13 @@ import { collection, doc } from "firebase/firestore"
 import { TimetableEntry, Teacher, Unit, Room } from "@/lib/types"
 import { DAYS } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
-import { deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 
 interface ConflictItem {
+  id: string
   level: 'low' | 'mid' | 'high'
   type: string
   message: string
@@ -62,7 +54,7 @@ interface ConflictItem {
   time: string
   involvedSessionIds: string[]
   teacherId?: string
-  unitIds: string[]
+  unitId?: string // Specifically for qualification fix
 }
 
 function MultiSelectFilter({ 
@@ -166,11 +158,14 @@ export default function ConflictsPage() {
     const conflicts: ConflictItem[] = []
     if (!sessions || !teachers || !units) return conflicts
 
+    // Filter out sessions that have already been acknowledged
+    const activeSessions = sessions.filter(s => !s.acknowledged)
+
     const teacherUsage: Record<string, { slot: string, sessionId: string }[]> = {}
     const roomUsage: Record<string, { slot: string, sessionId: string }[]> = {}
     const unitMergeCheck: Record<string, { day: string, startTime: string, room: string, sessionId: string }[]> = {}
 
-    sessions.forEach(s => {
+    activeSessions.forEach(s => {
       const teacher = teachers.find(t => t.id === s.teacherId)
       const unit = units.find(u => u.id === s.unitId)
       const room = rooms?.find(r => r.name === s.room && r.campus === s.campus)
@@ -180,6 +175,7 @@ export default function ConflictsPage() {
       // 1. Trainer Qualification Check
       if (teacher && unit && !teacher.qualifiedUnits.includes(unit.id)) {
         conflicts.push({
+          id: `qual-${s.id}`,
           level: 'high',
           type: 'Qualification Mismatch',
           message: `${teacher.name} is not qualified for ${unit.name}`,
@@ -188,30 +184,11 @@ export default function ConflictsPage() {
           time: s.startTime,
           involvedSessionIds: [s.id],
           teacherId: s.teacherId,
-          unitIds: [unit.id]
+          unitId: unit.id
         })
       }
 
-      // 2. Trainer Availability (JotForm) Check
-      if (teacher && teacher.availability.length > 0) {
-        const dayAvail = teacher.availability.filter(a => a.day === s.day)
-        const isAvailable = dayAvail.some(a => s.startTime >= a.startTime && s.endTime <= a.endTime)
-        if (!isAvailable) {
-          conflicts.push({
-            level: 'high',
-            type: 'Availability Breach',
-            message: `${teacher.name} scheduled outside availability`,
-            details: `Conflict with trainer's submitted availability blocks for ${s.day}.`,
-            day: s.day,
-            time: s.startTime,
-            involvedSessionIds: [s.id],
-            teacherId: s.teacherId,
-            unitIds: [s.unitId]
-          })
-        }
-      }
-
-      // 3. Double Booking Detection (Trainer & Room)
+      // 2. Double Booking Detection (Trainer & Room)
       const startH = parseInt(s.startTime.split(':')[0])
       const endH = parseInt(s.endTime.split(':')[0]) || 24
       
@@ -224,6 +201,7 @@ export default function ConflictsPage() {
           const existing = teacherUsage[s.teacherId].find(u => u.slot === slotKey)
           if (existing) {
             conflicts.push({
+              id: `overlap-t-${s.id}-${existing.sessionId}`,
               level: 'high',
               type: 'Trainer Overlap',
               message: `${teacher?.name || s.teacherId} is double-booked`,
@@ -231,8 +209,7 @@ export default function ConflictsPage() {
               day: s.day,
               time: `${h}:00`,
               involvedSessionIds: [existing.sessionId, s.id],
-              teacherId: s.teacherId,
-              unitIds: [s.unitId]
+              teacherId: s.teacherId
             })
           }
           teacherUsage[s.teacherId].push({ slot: slotKey, sessionId: s.id })
@@ -245,14 +222,14 @@ export default function ConflictsPage() {
           const existing = roomUsage[roomKey].find(u => u.slot === slotKey)
           if (existing) {
             conflicts.push({
+              id: `overlap-r-${s.id}-${existing.sessionId}`,
               level: 'high',
               type: 'Room Overlap',
               message: `${s.room} is double-booked`,
               details: `Physical capacity conflict. Only one class can feasibly run in ${s.room} at any given time.`,
               day: s.day,
               time: `${h}:00`,
-              involvedSessionIds: [existing.sessionId, s.id],
-              unitIds: [s.unitId]
+              involvedSessionIds: [existing.sessionId, s.id]
             })
           }
           roomUsage[roomKey].push({ slot: slotKey, sessionId: s.id })
@@ -261,70 +238,55 @@ export default function ConflictsPage() {
 
       // --- MID LEVEL CONFLICTS ---
 
-      // 4. Gosford After-Hours Rule
+      // 3. Gosford After-Hours Rule
       if (s.campus === 'Gosford') {
         const finishH = parseInt(s.endTime.split(':')[0])
         if (finishH >= 17) {
           conflicts.push({
+            id: `gosford-${s.id}`,
             level: 'mid',
             type: 'Institutional Constraint',
             message: `Gosford class ends after 5:00 PM`,
             details: `Buses in Gosford stop at 5pm. Institutional rule requires classes to finish earlier for student safety.`,
             day: s.day,
             time: s.startTime,
-            involvedSessionIds: [s.id],
-            unitIds: [s.unitId]
+            involvedSessionIds: [s.id]
           })
         }
       }
 
-      // 5. Capacity vs Type Check
+      // 4. Capacity vs Type Check
       if (room && unit) {
-        if (unit.type === 'theory' && room.capacity > 30) {
-           // Info: Room might be too big or students might be spread too thin
-        } else if (unit.type === 'theory' && room.capacity < 15) {
+        if (unit.type === 'theory' && room.capacity < 15) {
           conflicts.push({
+            id: `cap-${s.id}`,
             level: 'mid',
             type: 'Capacity Warning',
             message: `Room ${s.room} might be too small for Theory`,
             details: `Standard Theory classes aim for 30 students. This room only holds ${room.capacity}.`,
             day: s.day,
             time: s.startTime,
-            involvedSessionIds: [s.id],
-            unitIds: [s.unitId]
-          })
-        }
-        
-        if (unit.type === 'practical' && room.type !== 'Workshop') {
-          conflicts.push({
-            level: 'mid',
-            type: 'Equipment Mismatch',
-            message: `Practical unit in Theory classroom`,
-            details: `Practical units like Kitchen Management require specialized Workshop/Kitchen facilities.`,
-            day: s.day,
-            time: s.startTime,
-            involvedSessionIds: [s.id],
-            unitIds: [s.unitId]
+            involvedSessionIds: [s.id]
           })
         }
       }
 
       // --- LOW LEVEL CONFLICTS ---
 
-      // 6. Merge Opportunity Check
+      // 5. Merge Opportunity Check
       const mergeKey = `${unit?.id}-${s.day}-${s.startTime}`
       if (!unitMergeCheck[mergeKey]) unitMergeCheck[mergeKey] = []
       const potentialMerge = unitMergeCheck[mergeKey].find(m => m.room !== s.room)
       if (potentialMerge) {
         conflicts.push({
+          id: `merge-${s.id}-${potentialMerge.sessionId}`,
           level: 'low',
           type: 'Resource Optimization',
           message: `Potential Unit Merge: ${unit?.name}`,
           details: `Same unit is running in different rooms at the same time. Consider merging batches to save trainer hours if student count allows.`,
           day: s.day,
           time: s.startTime,
-          involvedSessionIds: [potentialMerge.sessionId, s.id],
-          unitIds: [s.unitId]
+          involvedSessionIds: [potentialMerge.sessionId, s.id]
         })
       }
       unitMergeCheck[mergeKey].push({ day: s.day, startTime: s.startTime, room: s.room, sessionId: s.id })
@@ -340,13 +302,26 @@ export default function ConflictsPage() {
     return data
   }, [rawConflicts, selectedDays, selectedLevels])
 
-  const handleDeleteConflictSessions = () => {
+  const handleIgnoreConflict = () => {
     if (!selectedConflict) return
     selectedConflict.involvedSessionIds.forEach(sessionId => {
       const sessionRef = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionId)
-      deleteDocumentNonBlocking(sessionRef)
+      updateDocumentNonBlocking(sessionRef, { acknowledged: true })
     })
-    toast({ title: "Conflict Entries Removed" })
+    toast({ title: "Conflict Acknowledged", description: "The sessions will no longer appear in the monitor." })
+    setSelectedConflict(null)
+  }
+
+  const handleGrantQualification = () => {
+    if (!selectedConflict || !selectedConflict.teacherId || !selectedConflict.unitId) return
+    const teacher = teachers?.find(t => t.id === selectedConflict.teacherId)
+    if (!teacher) return
+
+    const teacherRef = doc(db, "teachers", teacher.id)
+    const newQualifications = [...new Set([...teacher.qualifiedUnits, selectedConflict.unitId])]
+    
+    updateDocumentNonBlocking(teacherRef, { qualifiedUnits: newQualifications })
+    toast({ title: "Qualification Granted", description: `${teacher.name} is now qualified for the assigned unit.` })
     setSelectedConflict(null)
   }
 
@@ -363,7 +338,7 @@ export default function ConflictsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Conflict Monitor</h2>
-          <p className="text-muted-foreground text-sm">3-Level Audit: High (Blockers), Mid (Operational), Low (Optimization).</p>
+          <p className="text-muted-foreground text-sm">Automated Audit: High (Blockers), Mid (Operational), Low (Optimization).</p>
         </div>
       </div>
 
@@ -407,56 +382,32 @@ export default function ConflictsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-6">
-          {/* HIGH LEVEL */}
-          {(selectedLevels.length === 0 || selectedLevels.includes('high')) && (
-            <div className="space-y-4">
-               <h3 className="text-sm font-black uppercase tracking-widest text-destructive flex items-center gap-2">
-                 <Zap className="h-4 w-4 fill-destructive" /> Critical Blockers (High)
-               </h3>
-               <div className="grid gap-3">
-                 {filteredConflicts.filter(c => c.level === 'high').map((c, i) => (
-                   <ConflictCard key={i} conflict={c} onSelect={setSelectedConflict} />
-                 ))}
-                 {filteredConflicts.filter(c => c.level === 'high').length === 0 && (
-                   <div className="p-8 text-center border-2 border-dashed rounded-xl opacity-40 italic text-sm">No critical blockers found.</div>
-                 )}
-               </div>
-            </div>
-          )}
+          {/* SECTIONS FOR EACH LEVEL */}
+          {['high', 'mid', 'low'].map((level) => {
+            if (selectedLevels.length > 0 && !selectedLevels.includes(level)) return null
+            const items = filteredConflicts.filter(c => c.level === level)
+            const config = {
+              high: { label: 'Critical Blockers', color: 'text-destructive', icon: Zap, bg: 'fill-destructive' },
+              mid: { label: 'Operational Risks', color: 'text-orange-600', icon: AlertCircle, bg: 'fill-orange-600' },
+              low: { label: 'Optimizations', color: 'text-blue-600', icon: TrendingUp, bg: '' }
+            }[level as 'high' | 'mid' | 'low']
 
-          {/* MID LEVEL */}
-          {(selectedLevels.length === 0 || selectedLevels.includes('mid')) && (
-            <div className="space-y-4">
-               <h3 className="text-sm font-black uppercase tracking-widest text-orange-600 flex items-center gap-2">
-                 <AlertCircle className="h-4 w-4 fill-orange-600" /> Operational Risks (Mid)
-               </h3>
-               <div className="grid gap-3">
-                 {filteredConflicts.filter(c => c.level === 'mid').map((c, i) => (
-                   <ConflictCard key={i} conflict={c} onSelect={setSelectedConflict} />
-                 ))}
-                 {filteredConflicts.filter(c => c.level === 'mid').length === 0 && (
-                   <div className="p-8 text-center border-2 border-dashed rounded-xl opacity-40 italic text-sm">No operational warnings.</div>
-                 )}
-               </div>
-            </div>
-          )}
-
-          {/* LOW LEVEL */}
-          {(selectedLevels.length === 0 || selectedLevels.includes('low')) && (
-            <div className="space-y-4">
-               <h3 className="text-sm font-black uppercase tracking-widest text-blue-600 flex items-center gap-2">
-                 <TrendingUp className="h-4 w-4" /> Optimizations (Low)
-               </h3>
-               <div className="grid gap-3">
-                 {filteredConflicts.filter(c => c.level === 'low').map((c, i) => (
-                   <ConflictCard key={i} conflict={c} onSelect={setSelectedConflict} />
-                 ))}
-                 {filteredConflicts.filter(c => c.level === 'low').length === 0 && (
-                   <div className="p-8 text-center border-2 border-dashed rounded-xl opacity-40 italic text-sm">No optimization suggestions.</div>
-                 )}
-               </div>
-            </div>
-          )}
+            return (
+              <div key={level} className="space-y-4">
+                 <h3 className={cn("text-sm font-black uppercase tracking-widest flex items-center gap-2", config.color)}>
+                   <config.icon className={cn("h-4 w-4", config.bg)} /> {config.label}
+                 </h3>
+                 <div className="grid gap-3">
+                   {items.map((c) => (
+                     <ConflictCard key={c.id} conflict={c} onSelect={setSelectedConflict} />
+                   ))}
+                   {items.length === 0 && (
+                     <div className="p-8 text-center border-2 border-dashed rounded-xl opacity-40 italic text-sm">No items found for this level.</div>
+                   )}
+                 </div>
+              </div>
+            )
+          })}
         </div>
 
         <div className="space-y-6">
@@ -507,19 +458,50 @@ export default function ConflictsPage() {
           </DialogHeader>
           <div className="py-4 space-y-4">
             <div className="p-4 bg-muted rounded-xl text-sm border">
-               <h4 className="font-black text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Technical Details</h4>
+               <h4 className="font-black text-[10px] uppercase tracking-widest text-muted-foreground mb-2 text-primary">Details</h4>
                {selectedConflict?.details}
             </div>
+
+            {/* Double Booking Detailed View */}
+            {selectedConflict?.involvedSessionIds && selectedConflict.involvedSessionIds.length > 1 && (
+              <div className="space-y-2">
+                <h4 className="font-black text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Conflicting Sessions:</h4>
+                <div className="space-y-2">
+                  {selectedConflict.involvedSessionIds.map(sid => {
+                    const session = sessions?.find(s => s.id === sid)
+                    const unit = units?.find(u => u.id === session?.unitId)
+                    if (!session) return null
+                    return (
+                      <div key={sid} className="flex flex-col p-2 bg-muted/40 rounded border border-dashed text-xs">
+                        <span className="font-bold text-primary">{unit?.name || session.unitId}</span>
+                        <div className="flex items-center gap-2 opacity-70 mt-1">
+                          <CalendarDays className="h-3 w-3" /> {session.day}
+                          <Clock className="h-3 w-3 ml-2" /> {session.startTime} - {session.endTime}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between text-xs font-bold text-muted-foreground bg-muted/30 p-3 rounded-lg border-dashed border">
                <div className="flex items-center gap-2"><CalendarDays className="h-4 w-4" /> {selectedConflict?.day}</div>
                <div className="flex items-center gap-2"><Clock className="h-4 w-4" /> {selectedConflict?.time}</div>
             </div>
           </div>
           <DialogFooter className="flex-col gap-2 sm:flex-row">
-            <Button variant="outline" onClick={() => setSelectedConflict(null)}>Dismiss</Button>
-            <Button variant="destructive" onClick={handleDeleteConflictSessions}>
-              <Trash2 className="mr-2 h-4 w-4" /> Delete Involved Sessions
+            <Button variant="outline" onClick={() => setSelectedConflict(null)}>Close</Button>
+            
+            <Button variant="ghost" onClick={handleIgnoreConflict} className="text-muted-foreground hover:text-primary">
+              <EyeOff className="mr-2 h-4 w-4" /> Ignore Conflict
             </Button>
+
+            {selectedConflict?.type === 'Qualification Mismatch' && (
+              <Button onClick={handleGrantQualification} className="bg-green-600 hover:bg-green-700 text-white">
+                <ShieldCheck className="mr-2 h-4 w-4" /> Grant Qualification
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
