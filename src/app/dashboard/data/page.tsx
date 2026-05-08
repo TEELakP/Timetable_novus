@@ -15,7 +15,8 @@ import {
   FileSpreadsheet,
   Save,
   FileJson,
-  Zap
+  Zap,
+  AlertTriangle
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -24,6 +25,16 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { useFirestore, useCollection, useMemoFirebase, useUser } from "@/firebase"
 import { collection, doc, writeBatch, getDocs, query, limit } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
@@ -31,9 +42,6 @@ import { Campus, Day, Teacher, Unit, Room, TimetableEntry, RoomType } from "@/li
 import { SITES_CONFIG } from "@/lib/mock-data"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
-
-// Removed pre-loaded data as requested
-const INITIAL_DATA_LOAD = ""
 
 type DataMode = 'excel' | 'json'
 type EntityType = 'teachers' | 'academicUnits' | 'rooms' | 'sessions' | 'rules'
@@ -58,8 +66,9 @@ export default function DataEntryPage() {
   const [mode, setMode] = useState<DataMode>('excel')
   const [selectedEntity, setSelectedEntity] = useState<EntityType>('teachers')
   const [jsonInput, setJsonInput] = useState("")
-  const [rawInput, setRawInput] = useState(INITIAL_DATA_LOAD)
+  const [rawInput, setRawInput] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isWipeDialogOpen, setIsWipeDialogOpen] = useState(false)
 
   useEffect(() => {
     let currentData: any[] = []
@@ -111,18 +120,8 @@ export default function DataEntryPage() {
   }, [rawInput])
 
   const handleClearDatabase = async () => {
-    if (isUserLoading || !user) {
-      toast({ 
-        variant: "destructive", 
-        title: "Authentication Pending", 
-        description: "Please wait for the secure session to initialize before wiping data." 
-      })
-      return
-    }
-
-    if (!confirm("NUCLEAR WIPE: This will permanently delete EVERY document across all collections. This cannot be undone. Continue?")) return
-    
     setIsProcessing(true)
+    setIsWipeDialogOpen(false)
     console.log("--- STARTING NUCLEAR WIPE ---");
     
     try {
@@ -141,20 +140,17 @@ export default function DataEntryPage() {
 
         console.log(`Found ${snapshot.size} documents in [${colName}]`);
         
-        // Process in batches of 400 (Firestore limit is 500)
         for (let i = 0; i < snapshot.docs.length; i += 400) {
           const batch = writeBatch(db);
           const chunk = snapshot.docs.slice(i, i + 400);
           
           for (const docSnapshot of chunk) {
-            // Special handling for nested classSessions inside Timetables
             if (colName === "timetables") {
               const sessionsRef = collection(db, "timetables", docSnapshot.id, "classSessions");
               const sessionsSnapshot = await getDocs(sessionsRef);
               
               if (!sessionsSnapshot.empty) {
                 console.log(`-> Deleting ${sessionsSnapshot.size} nested sessions for timetable: ${docSnapshot.id}`);
-                // Delete sessions in their own chunks
                 for (let j = 0; j < sessionsSnapshot.docs.length; j += 400) {
                   const subBatch = writeBatch(db);
                   sessionsSnapshot.docs.slice(j, j + 400).forEach(sDoc => {
@@ -184,7 +180,7 @@ export default function DataEntryPage() {
       toast({ 
         variant: "destructive", 
         title: "Wipe Operation Failed", 
-        description: e.message || "A secure database error occurred. Check the console (F12) for details." 
+        description: e.message || "A secure database error occurred." 
       });
     } finally {
       setIsProcessing(false)
@@ -304,7 +300,7 @@ export default function DataEntryPage() {
            <Button 
              variant="destructive" 
              className="shadow-lg border-2" 
-             onClick={handleClearDatabase} 
+             onClick={() => setIsWipeDialogOpen(true)} 
              disabled={isProcessing || isUserLoading}
            >
              {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4 fill-white" />}
@@ -437,6 +433,26 @@ export default function DataEntryPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={isWipeDialogOpen} onOpenChange={setIsWipeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Nuclear Database Wipe
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete ALL documents across ALL collections. Teachers, Units, Rooms, and all Scheduled Sessions will be lost forever. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleClearDatabase} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Confirm Nuclear Wipe
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
