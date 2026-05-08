@@ -1,3 +1,4 @@
+
 "use client"
 
 import React, { useState, useMemo } from "react"
@@ -14,7 +15,8 @@ import {
   User as UserIcon,
   Clock,
   AlertTriangle,
-  MapPin
+  MapPin,
+  Settings2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -38,14 +40,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { DAYS } from "@/lib/mock-data"
+import { DAYS, CAMPUSES } from "@/lib/mock-data"
 import { TimetableEntry, Teacher, Unit, Room, Day, Campus } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, getDocs, writeBatch } from "firebase/firestore"
 import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { cn } from "@/lib/utils"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
+
+const DELIVERY_MODES = [
+  { value: 'theory', label: 'Classroom' },
+  { value: 'practical', label: 'Workshop' },
+  { value: 'online', label: 'Online' },
+]
 
 function MultiSelectFilter({ 
   label, 
@@ -146,6 +155,7 @@ export default function TimetablePage() {
   const [selectedUnits, setSelectedUnits] = useState<string[]>([])
   const [selectedDays, setSelectedDays] = useState<string[]>([])
   const [selectedRooms, setSelectedRooms] = useState<string[]>([])
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([])
 
   const [isAddSessionOpen, setIsAddSessionOpen] = useState(false)
   const [newSession, setNewSession] = useState({
@@ -172,6 +182,12 @@ export default function TimetablePage() {
     if (selectedUnits.length > 0) data = data.filter(s => selectedUnits.includes(s.unitId))
     if (selectedDays.length > 0) data = data.filter(s => selectedDays.includes(s.day))
     if (selectedRooms.length > 0) data = data.filter(s => selectedRooms.includes(s.room))
+    if (selectedTypes.length > 0) {
+      data = data.filter(s => {
+        const unit = units?.find(u => u.id === s.unitId)
+        return unit && selectedTypes.includes(unit.type)
+      })
+    }
     
     return data.sort((a, b) => {
       const dayIndexA = DAYS.indexOf(a.day)
@@ -179,7 +195,7 @@ export default function TimetablePage() {
       if (dayIndexA !== dayIndexB) return dayIndexA - dayIndexB
       return a.startTime.localeCompare(b.startTime)
     })
-  }, [sessions, selectedCampuses, selectedTeachers, selectedUnits, selectedDays, selectedRooms])
+  }, [sessions, selectedCampuses, selectedTeachers, selectedUnits, selectedDays, selectedRooms, selectedTypes, units])
 
   const roomOptions = useMemo(() => {
     if (!sessions) return []
@@ -188,7 +204,10 @@ export default function TimetablePage() {
   }, [sessions])
 
   const handleAddSession = () => {
-    if (!newSession.unitId || !newSession.teacherId) return
+    if (!newSession.unitId || !newSession.teacherId || !newSession.room) {
+      toast({ variant: "destructive", title: "Missing Information", description: "Please ensure all fields including Room and Trainer are filled." })
+      return
+    }
     const id = `s-${Date.now()}`
     const sessionData: TimetableEntry = {
       ...newSession,
@@ -271,19 +290,27 @@ export default function TimetablePage() {
         </div>
         
         <MultiSelectFilter 
+          label="Sites"
+          icon={DoorOpen}
+          options={CAMPUSES.map(c => ({ label: c, value: c }))}
+          selected={selectedCampuses}
+          onChange={setSelectedCampuses}
+        />
+
+        <MultiSelectFilter 
+          label="Modes"
+          icon={Settings2}
+          options={DELIVERY_MODES}
+          selected={selectedTypes}
+          onChange={setSelectedTypes}
+        />
+
+        <MultiSelectFilter 
           label="Days"
           icon={CalendarDays}
           options={DAYS.map(d => ({ label: d, value: d }))}
           selected={selectedDays}
           onChange={setSelectedDays}
-        />
-
-        <MultiSelectFilter 
-          label="Rooms"
-          icon={DoorOpen}
-          options={roomOptions}
-          selected={selectedRooms}
-          onChange={setSelectedRooms}
         />
 
         <MultiSelectFilter 
@@ -294,12 +321,12 @@ export default function TimetablePage() {
           onChange={setSelectedTeachers}
         />
 
-        {(selectedCampuses.length > 0 || selectedTeachers.length > 0 || selectedRooms.length > 0 || selectedDays.length > 0) && (
+        {(selectedCampuses.length > 0 || selectedTeachers.length > 0 || selectedRooms.length > 0 || selectedDays.length > 0 || selectedTypes.length > 0) && (
           <Button 
             variant="ghost" 
             size="sm" 
             className="h-8 text-[10px] font-bold uppercase text-primary/60"
-            onClick={() => { setSelectedCampuses([]); setSelectedTeachers([]); setSelectedUnits([]); setSelectedDays([]); setSelectedRooms([]); }}
+            onClick={() => { setSelectedCampuses([]); setSelectedTeachers([]); setSelectedUnits([]); setSelectedDays([]); setSelectedRooms([]); setSelectedTypes([]); }}
           >
             Clear All
           </Button>
@@ -446,11 +473,13 @@ export default function TimetablePage() {
           <DialogHeader><DialogTitle>Add Manual Session</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label>Subject</Label>
+              <Label>Academic Unit (Class)</Label>
               <Select value={newSession.unitId} onValueChange={(v) => setNewSession({...newSession, unitId: v})}>
-                <SelectTrigger><SelectValue placeholder="Select Subject" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select Class" /></SelectTrigger>
                 <SelectContent>
-                  {units?.map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                  {units?.sort((a,b) => a.name.localeCompare(b.name)).map(u => (
+                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -459,9 +488,64 @@ export default function TimetablePage() {
               <Select value={newSession.teacherId} onValueChange={(v) => setNewSession({...newSession, teacherId: v})}>
                 <SelectTrigger><SelectValue placeholder="Select Trainer" /></SelectTrigger>
                 <SelectContent>
-                  {teachers?.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                  {teachers?.sort((a,b) => a.name.localeCompare(b.name)).map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Campus</Label>
+                <Select 
+                  value={newSession.campus} 
+                  onValueChange={(v: Campus) => setNewSession({...newSession, campus: v, room: "", location: ""})}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Room</Label>
+                <Select 
+                  value={newSession.room} 
+                  onValueChange={(v) => {
+                    const selectedRoom = rooms?.find(r => r.name === v && r.campus === newSession.campus)
+                    setNewSession({...newSession, room: v, location: selectedRoom?.address || ""})
+                  }}
+                  disabled={!newSession.campus}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select Room" /></SelectTrigger>
+                  <SelectContent>
+                    {rooms?.filter(r => r.campus === newSession.campus).sort((a,b) => a.name.localeCompare(b.name)).map(r => (
+                      <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Day</Label>
+                <Select value={newSession.day} onValueChange={(v: Day) => setNewSession({...newSession, day: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Timespan</Label>
+                <div className="flex items-center gap-1">
+                  <Input type="time" className="h-8 text-xs" value={newSession.startTime} onChange={e => setNewSession({...newSession, startTime: e.target.value})} />
+                  <span className="text-xs">-</span>
+                  <Input type="time" className="h-8 text-xs" value={newSession.endTime} onChange={e => setNewSession({...newSession, endTime: e.target.value})} />
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter><Button onClick={handleAddSession}>Save Session</Button></DialogFooter>
