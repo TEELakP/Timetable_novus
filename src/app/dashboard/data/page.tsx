@@ -13,7 +13,8 @@ import {
   Save,
   Zap,
   AlertTriangle,
-  Info
+  Info,
+  Server
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -35,7 +36,7 @@ import { useFirestore, useCollection, useMemoFirebase, useUser } from "@/firebas
 import { collection, doc, writeBatch, getDocs, deleteDoc } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { Campus, Day, Teacher, Unit, Room, TimetableEntry, RoomType } from "@/lib/types"
-import { ADDRESS_MAP } from "@/lib/mock-data"
+import { ADDRESS_MAP, SITES_CONFIG } from "@/lib/mock-data"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 
@@ -113,7 +114,15 @@ export default function DataEntryPage() {
       
       const location = parts[0]
       const campus = inferCampus(location)
-      const className = parts[7] || campus
+      
+      // Smart room assignment: If Class_name is empty, use campus/random fallback
+      let roomName = parts[7]
+      if (!roomName || roomName.trim() === "") {
+        if (campus === 'Perth') roomName = 'P1'
+        else if (campus === 'Ultimo') roomName = 'Suite 1'
+        else if (campus === 'Gosford') roomName = 'A1'
+        else roomName = campus
+      }
       
       return {
         campus,
@@ -124,7 +133,7 @@ export default function DataEntryPage() {
         email: parts[4],
         start: parts[5],
         finish: parts[6],
-        roomName: className
+        roomName: roomName
       }
     }).filter(Boolean)
   }, [rawInput])
@@ -134,7 +143,8 @@ export default function DataEntryPage() {
     setIsWipeDialogOpen(false)
     
     try {
-      const targetCollections = ["teachers", "academicUnits", "rooms", "schedulingRules", "timetables"];
+      // CRITICAL: "rooms" is EXCLUDED from the wipe to ensure institutional hierarchy persistence.
+      const targetCollections = ["teachers", "academicUnits", "schedulingRules", "timetables"];
       let totalDeleted = 0;
 
       for (const colName of targetCollections) {
@@ -143,12 +153,12 @@ export default function DataEntryPage() {
         
         if (snapshot.empty) continue;
         
+        // Use standard loop for batch chunking
         for (let i = 0; i < snapshot.docs.length; i += 400) {
           const batch = writeBatch(db);
           const chunk = snapshot.docs.slice(i, i + 400);
           
           for (const docSnapshot of chunk) {
-            // Delete sub-collections first
             if (colName === "timetables") {
               const sessionsRef = collection(db, "timetables", docSnapshot.id, "classSessions");
               const sessionsSnapshot = await getDocs(sessionsRef);
@@ -167,8 +177,8 @@ export default function DataEntryPage() {
       }
 
       toast({ 
-        title: "Nuclear Wipe Complete", 
-        description: `Successfully removed ${totalDeleted} entries across all collections.` 
+        title: "Database Reset Complete", 
+        description: `Successfully removed ${totalDeleted} entries. Rooms directory was preserved.` 
       });
       setRawInput("");
     } catch (e: any) {
@@ -189,7 +199,6 @@ export default function DataEntryPage() {
     const batch = writeBatch(db)
     const processedTeachers = new Set<string>()
     const processedUnits = new Set<string>()
-    const processedRooms = new Set<string>()
 
     try {
       parsedData.forEach((row: any) => {
@@ -199,11 +208,10 @@ export default function DataEntryPage() {
         const unitId = unitName.toLowerCase().trim().replace(/[^a-z0-9]/g, '-')
         const campus = row.campus as Campus
         const roomIdentifier = row.roomName || campus
-        const roomId = `${campus}-${roomIdentifier}`.toLowerCase().trim().replace(/[^a-z0-9]/g, '-')
 
-        if (!teacherId || !unitId || !roomId) return
+        if (!teacherId || !unitId) return
 
-        // Propagate Teacher
+        // Propagate Teacher (Upsert)
         if (!processedTeachers.has(teacherId)) {
           batch.set(doc(db, "teachers", teacherId), { 
             id: teacherId, 
@@ -216,7 +224,7 @@ export default function DataEntryPage() {
           processedTeachers.add(teacherId)
         }
 
-        // Propagate Unit
+        // Propagate Unit (Upsert)
         if (!processedUnits.has(unitId)) {
           batch.set(doc(db, "academicUnits", unitId), { 
             id: unitId, 
@@ -228,23 +236,7 @@ export default function DataEntryPage() {
           processedUnits.add(unitId)
         }
 
-        // Propagate Room (respecting hierarchy)
-        if (!processedRooms.has(roomId)) {
-          const roomType: RoomType = row.location.toLowerCase().includes('kitchen') || row.location.toLowerCase().includes('workshop') ? 'Workshop' : 'Classroom'
-          
-          batch.set(doc(db, "rooms", roomId), { 
-            id: roomId, 
-            name: roomIdentifier, 
-            capacity: 30, 
-            campus,
-            siteName: row.location,
-            address: row.location,
-            type: roomType
-          }, { merge: true })
-          processedRooms.add(roomId)
-        }
-
-        // Generate deterministic Session ID to prevent duplicates
+        // Generate deterministic Session ID
         const startT = parseTime(row.start)
         const finishT = parseTime(row.finish)
         const dayKey = row.day.toLowerCase().trim()
@@ -266,9 +258,41 @@ export default function DataEntryPage() {
       })
 
       await batch.commit()
-      toast({ title: "Synchronization Complete", description: `Updated ${parsedData.length} records successfully.` })
+      toast({ title: "Synchronization Complete", description: `Updated ${parsedData.length} records. All rooms referenced correctly.` })
     } catch (e: any) {
       toast({ variant: "destructive", title: "Sync Failed", description: e.message })
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleSeedRooms = async () => {
+    setIsProcessing(true)
+    const batch = writeBatch(db)
+    let count = 0
+
+    try {
+      Object.entries(SITES_CONFIG).forEach(([campus, config]) => {
+        config.forEach(site => {
+          site.rooms.forEach(roomName => {
+            const id = `r-${campus}-${roomName}`.toLowerCase().replace(/\s+/g, '-')
+            batch.set(doc(db, "rooms", id), {
+              id,
+              name: roomName,
+              campus: campus as Campus,
+              siteName: site.name,
+              address: site.address,
+              capacity: 30,
+              type: site.name.toLowerCase().includes('kitchen') || site.name.toLowerCase().includes('workshop') ? 'Workshop' : 'Classroom'
+            }, { merge: true })
+            count++
+          })
+        })
+      })
+      await batch.commit()
+      toast({ title: "Institutional Rooms Created", description: `Seeded ${count} persistent rooms across all sites.` })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Seeding Failed" })
     } finally {
       setIsProcessing(false)
     }
@@ -305,16 +329,23 @@ export default function DataEntryPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline text-primary">Data Manager</h2>
-          <p className="text-muted-foreground text-sm">Propagate entities via 8-column format (Location-based).</p>
+          <p className="text-muted-foreground text-sm">Reference institutional rooms using the 8-column Excel format.</p>
         </div>
         <div className="flex gap-2">
+           <Button 
+             variant="outline" 
+             onClick={handleSeedRooms} 
+             disabled={isProcessing || isUserLoading}
+           >
+             <Server className="mr-2 h-4 w-4" /> Seed Rooms
+           </Button>
            <Button 
              variant="destructive" 
              onClick={() => setIsWipeDialogOpen(true)} 
              disabled={isProcessing || isUserLoading}
            >
              {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-             Wipe Database
+             Wipe Schedule
            </Button>
            {mode === 'excel' ? (
              <Button onClick={handleSyncExcel} disabled={isProcessing || parsedData.length === 0} className="bg-primary">
@@ -369,7 +400,7 @@ export default function DataEntryPage() {
                      <TableHeader className="bg-muted/50 sticky top-0">
                        <TableRow>
                          <TableHead className="text-[10px]">Location</TableHead>
-                         <TableHead className="text-[10px]">Room (Class_name)</TableHead>
+                         <TableHead className="text-[10px]">Room (Referenced)</TableHead>
                          <TableHead className="text-[10px]">Subject</TableHead>
                          <TableHead className="text-[10px]">Trainer</TableHead>
                          <TableHead className="text-[10px]">Day/Time</TableHead>
@@ -431,16 +462,17 @@ export default function DataEntryPage() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <AlertTriangle className="h-5 w-5" />
-              Nuclear Database Reset
+              Reset All Schedule Data
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete all records across all collections, including hidden sub-collections. This is required before reloading your new Location-based data.
+              This will permanently delete all Sessions, Teachers, and Units. 
+              <strong> The Rooms directory and institutional hierarchy will be PRESERVED.</strong>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleClearDatabase} className="bg-destructive text-destructive-foreground">
-              Confirm Nuclear Wipe
+              Confirm Schedule Wipe
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
