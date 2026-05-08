@@ -1,4 +1,3 @@
-
 "use client"
 
 import React, { useState, useMemo } from "react"
@@ -44,7 +43,7 @@ import { DAYS, CAMPUSES } from "@/lib/mock-data"
 import { TimetableEntry, Teacher, Unit, Room, Day, Campus } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc, getDocs, writeBatch } from "firebase/firestore"
+import { collection, doc, writeBatch } from "firebase/firestore"
 import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { cn } from "@/lib/utils"
 
@@ -170,8 +169,6 @@ export default function TimetablePage() {
   })
 
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
-  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false)
-  const [isReseting, setIsReseting] = useState(false)
 
   const filteredSessions = useMemo(() => {
     if (!sessions) return []
@@ -197,12 +194,6 @@ export default function TimetablePage() {
     })
   }, [sessions, selectedCampuses, selectedTeachers, selectedUnits, selectedDays, selectedRooms, selectedTypes, units])
 
-  const roomOptions = useMemo(() => {
-    if (!sessions) return []
-    const uniqueRooms = Array.from(new Set(sessions.map(s => s.room).filter(Boolean)))
-    return uniqueRooms.sort().map(r => ({ label: r, value: r }))
-  }, [sessions])
-
   const handleAddSession = () => {
     if (!newSession.unitId || !newSession.teacherId || !newSession.room) {
       toast({ variant: "destructive", title: "Missing Information", description: "Please ensure all fields including Room and Trainer are filled." })
@@ -217,27 +208,6 @@ export default function TimetablePage() {
     setDocumentNonBlocking(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", id), sessionData, { merge: true })
     setIsAddSessionOpen(false)
     toast({ title: "Session Added" })
-  }
-
-  const handleEmergencyReset = async () => {
-    setIsReseting(true)
-    try {
-      const sessionsSnapshot = await getDocs(sessionsRef)
-      if (sessionsSnapshot.empty) {
-        toast({ title: "Database is already empty" })
-        return
-      }
-      
-      const batch = writeBatch(db)
-      sessionsSnapshot.docs.forEach(docSnap => batch.delete(docSnap.ref))
-      await batch.commit()
-      toast({ title: "Emergency Reset Complete" })
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Reset Failed", description: e.message })
-    } finally {
-      setIsReseting(false)
-      setIsResetDialogOpen(false)
-    }
   }
 
   const handleDeleteSession = (id: string) => {
@@ -264,9 +234,6 @@ export default function TimetablePage() {
           <p className="text-muted-foreground text-sm">Reviewing {filteredSessions.length} active sessions.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setIsResetDialogOpen(true)} className="text-destructive border-destructive/20 hover:bg-destructive/10">
-            <Trash2 className="mr-2 h-4 w-4" /> Reset Sessions
-          </Button>
           <Button onClick={() => setIsAddSessionOpen(true)} className="bg-primary">
             <Plus className="mr-2 h-4 w-4" /> New Session
           </Button>
@@ -431,25 +398,6 @@ export default function TimetablePage() {
           </Card>
         )}
       </div>
-
-      <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-destructive flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5" /> Emergency Reset
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete ALL active class sessions.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleEmergencyReset} disabled={isReseting} className="bg-destructive text-destructive-foreground">
-              {isReseting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Reset"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog open={!!sessionToDelete} onOpenChange={(open) => !open && setSessionToDelete(null)}>
         <AlertDialogContent>
