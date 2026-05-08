@@ -24,7 +24,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc, writeBatch } from "firebase/firestore"
+import { collection, doc, writeBatch, getDocs, query, limit } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { Campus, Day, Teacher, Unit, Room, TimetableEntry, RoomType } from "@/lib/types"
 import { SITES_CONFIG } from "@/lib/mock-data"
@@ -94,11 +94,11 @@ export default function DataEntryPage() {
   const sessionsRef = useMemoFirebase(() => collection(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions"), [db])
   const rulesRef = useMemoFirebase(() => collection(db, "schedulingRules"), [db])
   
-  const { data: teachers } = useCollection<Teacher>(teachersRef)
-  const { data: units } = useCollection<Unit>(unitsRef)
-  const { data: rooms } = useCollection<Room>(roomsRef)
-  const { data: sessions } = useCollection<TimetableEntry>(sessionsRef)
-  const { data: rules } = useCollection<{ id: string, name: string }>(rulesRef)
+  const { data: teachers, isLoading: loadingTeachers } = useCollection<Teacher>(teachersRef)
+  const { data: units, isLoading: loadingUnits } = useCollection<Unit>(unitsRef)
+  const { data: rooms, isLoading: loadingRooms } = useCollection<Room>(roomsRef)
+  const { data: sessions, isLoading: loadingSessions } = useCollection<TimetableEntry>(sessionsRef)
+  const { data: rules, isLoading: loadingRules } = useCollection<{ id: string, name: string }>(rulesRef)
 
   const [mode, setMode] = useState<DataMode>('excel')
   const [selectedEntity, setSelectedEntity] = useState<EntityType>('teachers')
@@ -156,20 +156,62 @@ export default function DataEntryPage() {
   }, [rawInput])
 
   const handleClearDatabase = async () => {
-    if (!confirm("DANGER: This will delete ALL current institutional data including Teachers, Units, Rooms, Sessions, and Rules. Continue?")) return
+    const isReady = !loadingTeachers && !loadingUnits && !loadingRooms && !loadingSessions && !loadingRules
+    if (!isReady) {
+      toast({ title: "Please Wait", description: "Data is still loading from the database." })
+      return
+    }
+
+    if (!confirm("DANGER: This will delete ALL current institutional data. This action is irreversible. Continue?")) return
+    
     setIsProcessing(true)
     const batch = writeBatch(db)
+    let count = 0
+
     try {
-      teachers?.forEach(t => batch.delete(doc(db, "teachers", t.id)))
-      units?.forEach(u => batch.delete(doc(db, "academicUnits", u.id)))
-      rooms?.forEach(r => batch.delete(doc(db, "rooms", r.id)))
-      sessions?.forEach(s => batch.delete(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id)))
-      rules?.forEach(rule => batch.delete(doc(db, "schedulingRules", rule.id)))
-      
-      await batch.commit()
-      toast({ title: "Database Wiped", description: "All institutional entries have been removed." })
-    } catch (e) {
-      toast({ variant: "destructive", title: "Wipe Failed" })
+      // Teachers
+      teachers?.forEach(t => {
+        batch.delete(doc(db, "teachers", t.id))
+        count++
+      })
+
+      // Units
+      units?.forEach(u => {
+        batch.delete(doc(db, "academicUnits", u.id))
+        count++
+      })
+
+      // Rooms
+      rooms?.forEach(r => {
+        batch.delete(doc(db, "rooms", r.id))
+        count++
+      })
+
+      // Sessions
+      sessions?.forEach(s => {
+        batch.delete(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id))
+        count++
+      })
+
+      // Rules
+      rules?.forEach(rule => {
+        batch.delete(doc(db, "schedulingRules", rule.id))
+        count++
+      })
+
+      if (count > 0) {
+        await batch.commit()
+        toast({ title: "Database Wiped", description: `Successfully removed ${count} entries.` })
+      } else {
+        toast({ title: "Nothing to Delete", description: "The database is already empty." })
+      }
+    } catch (e: any) {
+      console.error("Wipe failed:", e)
+      toast({ 
+        variant: "destructive", 
+        title: "Wipe Failed", 
+        description: e.message || "An error occurred while clearing the database." 
+      })
     } finally {
       setIsProcessing(false)
     }
@@ -285,8 +327,14 @@ export default function DataEntryPage() {
           <p className="text-muted-foreground text-sm">Bulk manage institutional records via Excel or raw JSON access.</p>
         </div>
         <div className="flex gap-2">
-           <Button variant="outline" className="text-destructive border-destructive/20 hover:bg-destructive/5" onClick={handleClearDatabase} disabled={isProcessing}>
-             <Trash2 className="mr-2 h-4 w-4" /> Wipe Database
+           <Button 
+             variant="outline" 
+             className="text-destructive border-destructive/20 hover:bg-destructive/5" 
+             onClick={handleClearDatabase} 
+             disabled={isProcessing}
+           >
+             {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+             Wipe Database
            </Button>
            {mode === 'excel' ? (
              <Button onClick={handleSyncExcel} disabled={isProcessing || parsedData.length === 0} className="bg-primary">
