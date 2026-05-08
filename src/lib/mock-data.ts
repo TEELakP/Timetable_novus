@@ -39,6 +39,12 @@ export const SITES_CONFIG = {
       address: ADDRESS_MAP['Ultimo Workshop (Automotive)'],
       rooms: ['Bay 1', 'Bay 2'],
       type: 'Workshop'
+    },
+    { 
+      name: 'Ultimo Workshop (Trade)', 
+      address: ADDRESS_MAP['Ultimo Workshop (Trade)'],
+      rooms: ['Granville Room 1'],
+      type: 'Workshop'
     }
   ],
   Gosford: [
@@ -52,6 +58,12 @@ export const SITES_CONFIG = {
       name: 'Gosford Kitchen', 
       address: ADDRESS_MAP['Gosford Kitchen'],
       rooms: ['Kitchen 1'],
+      type: 'Workshop'
+    },
+    { 
+      name: 'Gosford Workshop', 
+      address: ADDRESS_MAP['Gosford Workshop'],
+      rooms: ['Workshop G1'],
       type: 'Workshop'
     }
   ],

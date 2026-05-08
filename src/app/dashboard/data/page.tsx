@@ -117,7 +117,7 @@ export default function DataEntryPage() {
       let roomName = parts[7]
       if (!roomName || roomName.trim() === "") {
         if (campus === 'Perth') roomName = 'P1'
-        else if (campus === 'Ultimo') roomName = campus
+        else if (campus === 'Ultimo') roomName = 'Ultimo Fallback'
         else if (campus === 'Gosford') roomName = 'A1'
         else roomName = campus
       }
@@ -153,12 +153,7 @@ export default function DataEntryPage() {
         
         const batch = writeBatch(db);
         snapshot.docs.forEach(docSnapshot => {
-          if (colName === "timetables") {
-             // We'd ideally delete subcollections here too, but for MVP we focus on schedule
-             batch.delete(docSnapshot.ref);
-          } else {
-             batch.delete(docSnapshot.ref);
-          }
+          batch.delete(docSnapshot.ref);
           totalDeleted++;
         });
         await batch.commit();
@@ -283,11 +278,6 @@ export default function DataEntryPage() {
     }
   }
 
-  const handleSyncJson = async () => {
-     // Placeholder for JSON sync logic if needed
-     toast({ title: "JSON sync not implemented in this MVP" })
-  }
-
   return (
     <div className="flex-1 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -311,21 +301,14 @@ export default function DataEntryPage() {
              {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
              Wipe Schedule
            </Button>
-           {mode === 'excel' ? (
-             <Button onClick={handleSyncExcel} disabled={isProcessing || parsedData.length === 0} className="bg-primary">
-               {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-               Sync {parsedData.length} Records
-             </Button>
-           ) : (
-             <Button onClick={() => handleSyncJson()} disabled={isProcessing} className="bg-primary">
-               {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-               Save JSON
-             </Button>
-           )}
+           <Button onClick={handleSyncExcel} disabled={isProcessing || parsedData.length === 0} className="bg-primary">
+             {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+             Sync {parsedData.length} Records
+           </Button>
         </div>
       </div>
 
-      <Tabs value={mode} onValueChange={(v: any) => setMode(v)} className="space-y-6">
+      <Tabs defaultValue="excel" className="space-y-6">
         <TabsList className="grid w-[400px] grid-cols-2">
           <TabsTrigger value="excel" className="gap-2"><FileSpreadsheet className="h-4 w-4" /> Excel Sync</TabsTrigger>
           <TabsTrigger value="json" className="gap-2"><Code2 className="h-4 w-4" /> Raw JSON</TabsTrigger>
@@ -412,8 +395,8 @@ export default function DataEntryPage() {
             </CardHeader>
             <CardContent>
               <Textarea 
+                readOnly
                 value={jsonInput}
-                onChange={(e) => setJsonInput(e.target.value)}
                 className="font-mono text-[11px] min-h-[600px] bg-black text-green-400"
               />
             </CardContent>
