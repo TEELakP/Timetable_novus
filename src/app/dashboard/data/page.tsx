@@ -132,9 +132,11 @@ export default function DataEntryPage() {
 
   const parsedData = useMemo(() => {
     if (!rawInput.trim()) return []
+    // Split lines and explicitly filter out exact string duplicates in the input text
     const lines = rawInput.split('\n').filter(l => l.trim() !== "")
+    const uniqueLines = Array.from(new Set(lines))
     
-    return lines.map((line) => {
+    return uniqueLines.map((line) => {
       const parts = line.split('\t').map(p => p.trim())
       if (parts.length < 5) return null
       
@@ -179,7 +181,7 @@ export default function DataEntryPage() {
     const processedRooms = new Set<string>()
 
     try {
-      parsedData.forEach((row: any, idx) => {
+      parsedData.forEach((row: any) => {
         const teacherId = row.trainer.toLowerCase().replace(/[^a-z0-9]/g, '-')
         const unitId = row.unit.toLowerCase().replace(/[^a-z0-9]/g, '-')
         const roomId = row.location.toLowerCase().replace(/[^a-z0-9]/g, '-')
@@ -222,7 +224,11 @@ export default function DataEntryPage() {
           processedRooms.add(roomId)
         }
 
-        const sessionId = `entry-${Date.now()}-${idx}`
+        // Use a stable ID derived from the row content to prevent duplicate session records
+        // if the same data is synced multiple times.
+        const sessionKey = `${row.trainer}-${row.unit}-${row.day}-${row.start}-${row.location}`.toLowerCase().replace(/[^a-z0-9]/g, '-')
+        const sessionId = `s-${sessionKey}`
+        
         batch.set(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionId), {
           id: sessionId,
           unitId,
@@ -231,11 +237,11 @@ export default function DataEntryPage() {
           day: row.day,
           startTime: parseTime(row.start),
           endTime: parseTime(row.finish)
-        })
+        }, { merge: true })
       })
 
       await batch.commit()
-      toast({ title: "Sync Complete", description: `Processed ${parsedData.length} records.` })
+      toast({ title: "Sync Complete", description: `Processed ${parsedData.length} unique records.` })
     } catch (e) {
       toast({ variant: "destructive", title: "Sync Failed" })
     } finally {
@@ -305,7 +311,7 @@ export default function DataEntryPage() {
                   <Database className="h-5 w-5 text-primary" />
                   Excel Copy-Paste Area
                 </CardTitle>
-                <CardDescription>Paste your spreadsheet rows here.</CardDescription>
+                <CardDescription>Paste your spreadsheet rows here. Duplicates will be ignored.</CardDescription>
               </CardHeader>
               <CardContent className="flex-1 min-h-0">
                 <Textarea 
