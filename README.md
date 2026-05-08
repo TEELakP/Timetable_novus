@@ -2,6 +2,27 @@
 
 An AI-powered academic scheduling and conflict resolution system built with Next.js, Genkit, and Firebase.
 
+## Getting Started (Local Development)
+
+To run this project on your local machine:
+
+1. **Install Dependencies**:
+   ```bash
+   npm install
+   ```
+
+2. **Run the Development Server**:
+   ```bash
+   npm run dev
+   ```
+   The application will be available at `http://localhost:9002`.
+
+3. **Genkit (AI) Development**:
+   If you want to test AI flows in the Genkit UI:
+   ```bash
+   npm run genkit:dev
+   ```
+
 ## Deployment to GitHub
 
 Follow these steps to move your project to GitHub:
