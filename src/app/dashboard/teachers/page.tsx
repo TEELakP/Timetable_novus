@@ -15,7 +15,9 @@ import {
   Clock,
   ExternalLink,
   AlertTriangle,
-  Edit2
+  Edit2,
+  Settings2,
+  CheckCircle2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -152,6 +154,10 @@ export default function TeachersPage() {
   // Detail Modal State
   const [selectedTeacherForDetail, setSelectedTeacherForDetail] = useState<Teacher | null>(null)
 
+  // Edit Profile State
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
+  const [editingTeacherData, setEditingTeacherData] = useState<Teacher | null>(null)
+
   // Session Edit/Add State
   const [editingSession, setEditingSession] = useState<TimetableEntry | null>(null)
   const [newRoomForSession, setNewRoomForSession] = useState("")
@@ -259,6 +265,15 @@ export default function TeachersPage() {
     toast({ title: "Session Added" })
   }
 
+  const handleSaveProfile = () => {
+    if (!editingTeacherData) return
+    const teacherRef = doc(db, "teachers", editingTeacherData.id)
+    setDocumentNonBlocking(teacherRef, editingTeacherData, { merge: true })
+    setSelectedTeacherForDetail(editingTeacherData)
+    setIsEditProfileOpen(false)
+    toast({ title: "Profile Updated", description: "Teacher qualifications and campuses updated." })
+  }
+
   const confirmDelete = () => {
     if (!teacherToDelete) return
     const teacherRef = doc(db, "teachers", teacherToDelete)
@@ -274,6 +289,13 @@ export default function TeachersPage() {
       </div>
     )
   }
+
+  // Filter units to only those the current teacher is qualified for
+  const qualifiedUnitsList = useMemo(() => {
+    if (!selectedTeacherForDetail || !units) return []
+    return units.filter(u => selectedTeacherForDetail.qualifiedUnits.includes(u.id))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [selectedTeacherForDetail, units])
 
   return (
     <div className="flex-1 space-y-4">
@@ -464,9 +486,17 @@ export default function TeachersPage() {
                   <Mail className="h-3 w-3" /> {selectedTeacherForDetail?.email}
                 </DialogDescription>
               </div>
-              <Button onClick={() => setIsAddSessionOpen(true)} size="sm">
-                <Plus className="h-4 w-4 mr-1" /> Add Session
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => {
+                  setEditingTeacherData(selectedTeacherForDetail)
+                  setIsEditProfileOpen(true)
+                }}>
+                  <Settings2 className="h-4 w-4 mr-1" /> Edit Profile
+                </Button>
+                <Button onClick={() => setIsAddSessionOpen(true)} size="sm">
+                  <Plus className="h-4 w-4 mr-1" /> Add Session
+                </Button>
+              </div>
             </div>
           </DialogHeader>
           
@@ -520,6 +550,13 @@ export default function TeachersPage() {
                       </TableRow>
                     )
                   })}
+                  {teacherSessions.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="h-24 text-center text-muted-foreground italic">
+                        No sessions currently scheduled for this trainer.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -530,23 +567,96 @@ export default function TeachersPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Edit Profile Dialog */}
+      <Dialog open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Trainer Profile: {editingTeacherData?.name}</DialogTitle>
+            <DialogDescription>Assign teacher to specific academic units and campuses.</DialogDescription>
+          </DialogHeader>
+          {editingTeacherData && (
+            <div className="space-y-6 py-4">
+              <div className="space-y-3">
+                <Label className="text-base">Qualified Units</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 p-4 border rounded-lg max-h-[250px] overflow-y-auto bg-muted/20">
+                  {units?.sort((a,b) => a.name.localeCompare(b.name)).map(unit => (
+                    <div key={unit.id} className="flex items-center space-x-2">
+                      <Checkbox 
+                        id={`edit-unit-${unit.id}`}
+                        checked={editingTeacherData.qualifiedUnits.includes(unit.id)}
+                        onCheckedChange={(checked) => {
+                          const newList = checked 
+                            ? [...editingTeacherData.qualifiedUnits, unit.id]
+                            : editingTeacherData.qualifiedUnits.filter(id => id !== unit.id)
+                          setEditingTeacherData({...editingTeacherData, qualifiedUnits: newList})
+                        }}
+                      />
+                      <label htmlFor={`edit-unit-${unit.id}`} className="text-sm font-medium leading-none cursor-pointer">
+                        {unit.name}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-base">Assigned Campuses</Label>
+                <div className="flex flex-wrap gap-4 p-4 border rounded-lg bg-muted/20">
+                  {CAMPUSES.map(campus => (
+                    <div key={campus} className="flex items-center space-x-2">
+                      <Checkbox 
+                        id={`edit-campus-${campus}`}
+                        checked={editingTeacherData.campuses.includes(campus)}
+                        onCheckedChange={(checked) => {
+                          const newList = checked 
+                            ? [...editingTeacherData.campuses, campus]
+                            : editingTeacherData.campuses.filter(c => c !== campus)
+                          setEditingTeacherData({...editingTeacherData, campuses: newList})
+                        }}
+                      />
+                      <label htmlFor={`edit-campus-${campus}`} className="text-sm font-medium leading-none cursor-pointer">
+                        {campus}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditProfileOpen(false)}>Cancel</Button>
+            <Button onClick={handleSaveProfile} className="gap-2">
+              <CheckCircle2 className="h-4 w-4" /> Save Assignments
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* New Session Dialog for Specific Teacher */}
       <Dialog open={isAddSessionOpen} onOpenChange={setIsAddSessionOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Session for {selectedTeacherForDetail?.name}</DialogTitle>
+            <DialogDescription>Note: Only qualified units for this trainer are shown.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label>Subject</Label>
+              <Label>Subject (Qualified Only)</Label>
               <Select value={newSessionData.unitId} onValueChange={(v) => setNewSessionData({...newSessionData, unitId: v})}>
-                <SelectTrigger><SelectValue placeholder="Select Academic Unit" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder={qualifiedUnitsList.length > 0 ? "Select Qualified Unit" : "No qualifications assigned"} />
+                </SelectTrigger>
                 <SelectContent>
-                  {units?.sort((a,b) => a.name.localeCompare(b.name)).map(u => (
+                  {qualifiedUnitsList.map(u => (
                     <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {qualifiedUnitsList.length === 0 && (
+                <p className="text-[10px] text-destructive font-bold uppercase">
+                  Error: Assign qualifications in "Edit Profile" first.
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
@@ -583,7 +693,9 @@ export default function TeachersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddSessionOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddSessionToTeacher}>Save Session</Button>
+            <Button onClick={handleAddSessionToTeacher} disabled={!newSessionData.unitId || qualifiedUnitsList.length === 0}>
+              Save Session
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
