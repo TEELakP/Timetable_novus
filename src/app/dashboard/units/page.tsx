@@ -167,7 +167,9 @@ export default function UnitsPage() {
     day: "Monday" as Day,
     startTime: "09:00",
     endTime: "11:00",
-    room: ""
+    room: "",
+    campus: "Ultimo" as Campus,
+    location: ""
   })
   const [conflictWarning, setConflictWarning] = useState<string | null>(null)
 
@@ -256,10 +258,6 @@ export default function UnitsPage() {
     }
   }, [newSessionData, editingSession, teachers, sessions, isAddSessionOpen])
 
-  const [isSingleOpen, setIsSingleOpen] = useState(false)
-  const [newUnitName, setNewUnitName] = useState("")
-  const [newUnitType, setNewUnitType] = useState<'theory' | 'practical' | 'online'>('theory')
-
   const handleCreateUnit = () => {
     if (!newUnitName.trim()) return
     const id = `u-${Date.now()}`
@@ -333,13 +331,9 @@ export default function UnitsPage() {
     toast({ title: "Session Removed", description: "The class instance has been deleted." })
   }
 
-  if (loadingUnits) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
-  }
+  const [isSingleOpen, setIsSingleOpen] = useState(false)
+  const [newUnitName, setNewUnitName] = useState("")
+  const [newUnitType, setNewUnitType] = useState<'theory' | 'practical' | 'online'>('theory')
 
   return (
     <div className="flex-1 space-y-4">
@@ -520,7 +514,9 @@ export default function UnitsPage() {
                   day: "Monday",
                   startTime: "09:00",
                   endTime: "11:00",
-                  room: ""
+                  room: "",
+                  campus: 'Ultimo',
+                  location: ""
                 })
                 setIsAddSessionOpen(true)
               }} size="sm">
@@ -593,7 +589,7 @@ export default function UnitsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* New Session Dialog for Specific Unit - TEACHER VALIDATION ENFORCED */}
+      {/* New Session Dialog for Specific Unit - TEACHER & ROOM VALIDATION */}
       <Dialog open={isAddSessionOpen} onOpenChange={setIsAddSessionOpen}>
         <DialogContent>
           <DialogHeader>
@@ -629,6 +625,38 @@ export default function UnitsPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
+                <Label>Campus (City)</Label>
+                <Select 
+                  value={newSessionData.campus} 
+                  onValueChange={(v: Campus) => setNewSessionData({...newSessionData, campus: v, room: "", location: ""})}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Room</Label>
+                <Select 
+                  value={newSessionData.room} 
+                  onValueChange={(v) => {
+                    const selectedRoom = rooms?.find(r => r.name === v && r.campus === newSessionData.campus)
+                    setNewSessionData({...newSessionData, room: v, location: selectedRoom?.address || ""})
+                  }}
+                  disabled={!newSessionData.campus}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select Room" /></SelectTrigger>
+                  <SelectContent>
+                    {rooms?.filter(r => r.campus === newSessionData.campus).sort((a,b) => a.name.localeCompare(b.name)).map(r => (
+                      <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
                 <Label>Day</Label>
                 <Select value={newSessionData.day} onValueChange={(v: Day) => setNewSessionData({...newSessionData, day: v})}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -638,31 +666,18 @@ export default function UnitsPage() {
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label>Location</Label>
-                <Select value={newSessionData.room} onValueChange={(v) => setNewSessionData({...newSessionData, room: v})}>
-                  <SelectTrigger><SelectValue placeholder="Room" /></SelectTrigger>
-                  <SelectContent>
-                    {rooms?.sort((a,b) => a.name.localeCompare(b.name)).map(r => (
-                      <SelectItem key={r.id} value={r.name}>{r.name} ({r.campus})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Start Time</Label>
-                <Input type="time" value={newSessionData.startTime} onChange={e => setNewSessionData({...newSessionData, startTime: e.target.value})} />
-              </div>
-              <div className="grid gap-2">
-                <Label>End Time</Label>
-                <Input type="time" value={newSessionData.endTime} onChange={e => setNewSessionData({...newSessionData, endTime: e.target.value})} />
+                <Label>Timespan</Label>
+                <div className="flex items-center gap-1">
+                  <Input type="time" className="h-8 text-xs" value={newSessionData.startTime} onChange={e => setNewSessionData({...newSessionData, startTime: e.target.value})} />
+                  <span className="text-xs">-</span>
+                  <Input type="time" className="h-8 text-xs" value={newSessionData.endTime} onChange={e => setNewSessionData({...newSessionData, endTime: e.target.value})} />
+                </div>
               </div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddSessionOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddSessionToUnit} disabled={!newSessionData.teacherId || newSessionData.teacherId === 'none'}>
+            <Button onClick={handleAddSessionToUnit} disabled={!newSessionData.teacherId || !newSessionData.room}>
               Save Session
             </Button>
           </DialogFooter>
@@ -699,6 +714,37 @@ export default function UnitsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
+                  <Label>Campus</Label>
+                  <Select 
+                    value={editingSession.campus} 
+                    onValueChange={(v: Campus) => setEditingSession({...editingSession, campus: v, room: "", location: ""})}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Room</Label>
+                  <Select 
+                    value={editingSession.room} 
+                    onValueChange={(v) => {
+                      const selectedRoom = rooms?.find(r => r.name === v && r.campus === editingSession.campus)
+                      setEditingSession({...editingSession, room: v, location: selectedRoom?.address || ""})
+                    }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Room" /></SelectTrigger>
+                    <SelectContent>
+                      {rooms?.filter(r => r.campus === editingSession.campus).sort((a,b) => a.name.localeCompare(b.name)).map(r => (
+                        <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
                   <Label>Day</Label>
                   <Select value={editingSession.day} onValueChange={(v: Day) => setEditingSession({...editingSession, day: v})}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -708,25 +754,12 @@ export default function UnitsPage() {
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label>Location</Label>
-                  <Select value={editingSession.room} onValueChange={(v) => setEditingSession({...editingSession, room: v})}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {rooms?.sort((a,b) => a.name.localeCompare(b.name)).map(r => (
-                        <SelectItem key={r.id} value={r.name}>{r.name} ({r.campus})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Start Time</Label>
-                  <Input type="time" value={editingSession.startTime} onChange={e => setEditingSession({...editingSession, startTime: e.target.value})} />
-                </div>
-                <div className="grid gap-2">
-                  <Label>End Time</Label>
-                  <Input type="time" value={editingSession.endTime} onChange={e => setEditingSession({...editingSession, endTime: e.target.value})} />
+                  <Label>Timespan</Label>
+                  <div className="flex items-center gap-1">
+                    <Input type="time" className="h-8 text-xs" value={editingSession.startTime} onChange={e => setEditingSession({...editingSession, startTime: e.target.value})} />
+                    <span className="text-xs">-</span>
+                    <Input type="time" className="h-8 text-xs" value={editingSession.endTime} onChange={e => setEditingSession({...editingSession, endTime: e.target.value})} />
+                  </div>
                 </div>
               </div>
             </div>
