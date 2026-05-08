@@ -30,6 +30,8 @@ export interface Room {
   name: string;
   capacity: number;
   campus: Campus;
+  siteName: string; // e.g., 'Main Campus', 'Kitchen', 'Workshop'
+  address?: string;
 }
 
 export interface TimetableEntry {
