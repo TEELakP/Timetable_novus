@@ -148,6 +148,7 @@ export default function DataEntryPage() {
           const chunk = snapshot.docs.slice(i, i + 400);
           
           for (const docSnapshot of chunk) {
+            // Delete sub-collections first
             if (colName === "timetables") {
               const sessionsRef = collection(db, "timetables", docSnapshot.id, "classSessions");
               const sessionsSnapshot = await getDocs(sessionsRef);
@@ -202,6 +203,7 @@ export default function DataEntryPage() {
 
         if (!teacherId || !unitId || !roomId) return
 
+        // Propagate Teacher
         if (!processedTeachers.has(teacherId)) {
           batch.set(doc(db, "teachers", teacherId), { 
             id: teacherId, 
@@ -214,6 +216,7 @@ export default function DataEntryPage() {
           processedTeachers.add(teacherId)
         }
 
+        // Propagate Unit
         if (!processedUnits.has(unitId)) {
           batch.set(doc(db, "academicUnits", unitId), { 
             id: unitId, 
@@ -225,6 +228,7 @@ export default function DataEntryPage() {
           processedUnits.add(unitId)
         }
 
+        // Propagate Room (respecting hierarchy)
         if (!processedRooms.has(roomId)) {
           const roomType: RoomType = row.location.toLowerCase().includes('kitchen') || row.location.toLowerCase().includes('workshop') ? 'Workshop' : 'Classroom'
           
@@ -240,6 +244,7 @@ export default function DataEntryPage() {
           processedRooms.add(roomId)
         }
 
+        // Generate deterministic Session ID to prevent duplicates
         const startT = parseTime(row.start)
         const finishT = parseTime(row.finish)
         const dayKey = row.day.toLowerCase().trim()

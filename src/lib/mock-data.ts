@@ -1,12 +1,12 @@
 
-import { Teacher, Unit, Day, Campus, Room, TimetableEntry } from './types';
+import { Campus, Day } from './types';
 
 export const CAMPUSES: Campus[] = ['Ultimo', 'Gosford', 'Perth', 'Online'];
 
 export const DAYS: Day[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 export const HOURS = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
 
-// Official institutional address mapping provided by the user
+// Official institutional address mapping
 export const ADDRESS_MAP: Record<string, string> = {
   'Ultimo Campus': 'Level 3, Suite 3.09-3.11 22/36 Mountain St, Ultimo NSW 2007',
   'Gosford Campus': '153 Mann Street, Level 1, Suite 5, Gosford NSW 2250',
@@ -19,6 +19,7 @@ export const ADDRESS_MAP: Record<string, string> = {
 };
 
 // Configuration for site hierarchy
+// This defines which addresses belong to which city and their default categories
 export const SITES_CONFIG = {
   Ultimo: [
     { name: 'Ultimo Campus', type: 'Classroom', address: ADDRESS_MAP['Ultimo Campus'] },

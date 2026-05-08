@@ -32,12 +32,12 @@ export interface Room {
   capacity: number;
   campus: Campus;
   siteName: string; // e.g., 'Main Campus', 'Kitchen', 'Workshop'
-  address?: string;
+  address: string;
   type: RoomType;
 }
 
 export interface TimetableEntry {
-  id: string; // Internal id for tracking UI
+  id: string; 
   unitId: string;
   teacherId: string;
   day: Day;
