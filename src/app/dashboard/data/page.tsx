@@ -32,55 +32,8 @@ import { SITES_CONFIG } from "@/lib/mock-data"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
 
-const INITIAL_DATA_LOAD = `Ultimo	DBC	Wednesday	Bharath	Bharath@novus.edu.au	4:00:00 PM	10:30:00 PM	Makalu
-Ultimo	ADCCD B1	Monday	Bharath	Bharath@novus.edu.au	9:30:00 AM	4:00:00 PM	Makalu
-Ultimo	ADCCD B1	Tuesday	Bharath	Bharath@novus.edu.au	9:30:00 AM	6:00:00 PM	Everest
-Ultimo	ADCCD B2/B3	Saturday	Bharath	Bharath@novus.edu.au	9:30:00 AM	6:00:00 PM	Everest
-Ultimo	ADCCD B2/B3	Friday	Bharath	Bharath@novus.edu.au	4:00:00 PM	10:30:00 PM	Suite 1.15
-Ultimo	C4B	Monday	Ghanshyam	Ghanshyam@novus.edu.au	2:00:00 PM	10:30:00 PM	Kanchenjunga
-Ultimo	C4B	Tuesday	Ghanshyam	Ghanshyam@novus.edu.au	4:00:00 PM	10:30:00 PM	Kanchenjunga
-Ultimo	DOB	Friday	Ghanshyam	Ghanshyam@novus.edu.au	4:00:00 PM	10:30:00 PM	Kosciuscko
-Ultimo	C3PD B1	Monday	Harry	Harry@novus.edu.au	4:00:00 PM	10:30:00 PM	Suite 1.15
-Ultimo	C3PD B2	Monday	Harry	Harry@novus.edu.au	4:00:00 PM	10:30:00 PM	Suite 1.15
-Ultimo	DBC	Thursday	Harry/Bharath	Bharath@novus.edu.au	2:00:00 PM	10:30:00 PM	Kanchenjunga
-Ultimo	C3LVMT B1	Saturday	Issa	Issakalouche@novus.edu.au	9:30:00 AM	4:00:00 PM	Kilimanjaro
-Ultimo	C4KM B2	Tuesday	Jessy	Jessy@novus.edu.au	1:30:00 PM	10:00:00 PM	Kosciuscko
-Ultimo	C4KM B2	Monday	Kabir	Kabir@novus.edu.au	4:00:00 PM	10:30:00 PM	Kosciuscko
-Ultimo	C3AET B1	Wednesday	Krunal	Krunal@novus.edu.au	4:00:00 PM	10:30:00 PM	Kanchenjunga
-Ultimo	C3LVMT B2	Wednesday	Krunal	Krunal@novus.edu.au	4:00:00 PM	10:30:00 PM	Kanchenjunga
-Ultimo	DAM	Sunday	Krunal/Ghansham	Krunal@novus.edu.au	9:30:00 AM	6:00:00 PM	Kilimanjaro
-Ultimo	DAM	Saturday	Krunal/Ghansham	Krunal@novus.edu.au	9:30:00 AM	4:00:00 PM	Kosciuscko
-Ultimo	ELICOS B1	Monday	Kylie	Kylie@novus.edu.au	5:30:00 PM	10:30:00 PM	Makalu
-Ultimo	ELICOS B1	Tuesday	Kylie	Kylie@novus.edu.au	5:00:00 PM	10:00:00 PM	Makalu
-Ultimo	ELICOS B1	Wednesday	Kylie	Kylie@novus.edu.au	5:00:00 PM	10:00:00 PM	Everest
-Ultimo	ELICOS B1	Thursday	Kylie	Kylie@novus.edu.au	5:00:00 PM	10:00:00 PM	Makalu
-Ultimo	ELICOS B2	Tuesday	Lakshmee	Lakshmee@novus.edu.au	5:00:00 PM	10:00:00 PM	Suite 1.15
-Ultimo	ELICOS B2	Wednesday	Lakshmee	Lakshmee@novus.edu.au	5:00:00 PM	10:00:00 PM	Kilimanjaro
-Ultimo	ELICOS B2	Friday	Lakshmee	Lakshmee@novus.edu.au	4:00:00 PM	9:30:00 PM	Makalu
-Ultimo	ELICOS B2	Thursday	Lakshmee	Lakshmee@novus.edu.au	5:00:00 PM	10:00:00 PM	Kosciuscko
-Ultimo	ADHM	Friday	Madan	Madan@novus.edu.au	9:30:00 AM	4:00:00 PM	Kosciuscko
-Ultimo	ADHM	Tuesday	Madan	Madan@novus.edu.au	9:30:00 AM	6:00:00 PM	Kilimanjaro
-Ultimo	DHM	Wednesday	Madan	Madan@novus.edu.au	7:30:00 AM	2:00:00 PM	Suite 1.15
-Ultimo	DHM	Thursday	Madan	Madan@novus.edu.au	7:30:00 AM	4:00:00 PM	Suite 1.15
-Ultimo	ADCSM Group A	Thursday	Maxine	Maxine@novus.edu.au	8:30:00 AM	5:00:00 PM	Kosciuscko
-Ultimo	ADCSM Group A	Friday	Maxine	Maxine@novus.edu.au	9:30:00 AM	4:00:00 PM	Kilimanjaro
-Ultimo	ADCSM ICT	Monday	Maxine	Maxine@novus.edu.au	9:30:00 AM	4:00:00 PM	Kosciuscko
-Ultimo	ADCSM ICT	Tuesday	Maxine	Maxine@novus.edu.au	8:30:00 AM	5:00:00 PM	Makalu
-Ultimo	DCS	Monday	Rebecca	Rebecca@novus.edu.au	9:30:00 AM	4:00:00 PM	Suite 1.15
-Ultimo	DCS	Tuesday	Rebecca	Rebecca@novus.edu.au	8:30:00 AM	5:00:00 PM	Suite 1.15
-Ultimo	C4KM B1	Wednesday	Sagar	Sagar@novus.edu.au	9:30:00 AM	4:00:00 PM	Kilimanjaro
-Ultimo	C4KM B2	Wednesday	Sagar	Sagar@novus.edu.au	9:30:00 AM	4:00:00 PM	Kilimanjaro
-Ultimo	GDM	Friday	Sagar	Sagar@novus.edu.au	4:00:00 PM	10:30:00 PM	Kilimanjaro
-Ultimo	ADCSM Group B	Thursday	Dr. Sajal	Sajal@novus.edu.au	8:30:00 AM	5:00:00 PM	Makalu
-Ultimo	ADCSM Group B	Friday	Dr. Sajal	Sajal@novus.edu.au	9:30:00 AM	4:00:00 PM	Everest
-Ultimo	C3BB B1	Thursday	Sullaiman	Sullaiman@novus.edu.au	4:00:00 PM	10:30:00 PM	Suite 1.15
-Ultimo	C3BB B2	Thursday	Sullaiman	Sullaiman@novus.edu.au	4:00:00 PM	10:30:00 PM	Suite 1.15
-Ultimo	C3WFT	Friday	Sullaiman	Sullaiman@novus.edu.au	4:00:00 PM	10:30:00 PM	Kanchenjunga
-Ultimo	ADB	Thursday	Sushil	Sushil@novus.edu.au	2:00:00 PM	10:30:00 PM	Kilimanjaro
-Ultimo	ADB	Friday	Sushil	Sushil@novus.edu.au	4:00:00 PM	10:30:00 PM	Everest
-Ultimo	DOB	Monday	Sushil	Sushil@novus.edu.au	2:00:00 PM	10:30:00 PM	Kilimanjaro
-Ultimo	GDM	Wednesday	Sushil	Sushil@novus.edu.au	2:00:00 PM	10:30:00 PM	Suite 1.15
-Ultimo	C3AET B2	Wednesday	Vikesh	Vikesh@novus.edu.au	4:00:00 PM	10:30:00 PM	Kosciuscko`
+// Removed pre-loaded data as requested
+const INITIAL_DATA_LOAD = ""
 
 type DataMode = 'excel' | 'json'
 type EntityType = 'teachers' | 'academicUnits' | 'rooms' | 'sessions' | 'rules'
@@ -158,33 +111,37 @@ export default function DataEntryPage() {
   }, [rawInput])
 
   const handleClearDatabase = async () => {
-    if (!user) {
-      toast({ variant: "destructive", title: "Authentication Pending", description: "Please wait for the secure session to initialize." })
+    if (isUserLoading || !user) {
+      toast({ 
+        variant: "destructive", 
+        title: "Authentication Pending", 
+        description: "Please wait for the secure session to initialize before wiping data." 
+      })
       return
     }
 
     if (!confirm("NUCLEAR WIPE: This will permanently delete EVERY document across all collections. This cannot be undone. Continue?")) return
     
     setIsProcessing(true)
-    console.log("Starting Nuclear Database Wipe...");
+    console.log("--- STARTING NUCLEAR WIPE ---");
     
     try {
       let totalDeleted = 0;
       const targetCollections = ["teachers", "academicUnits", "rooms", "schedulingRules", "timetables"];
 
       for (const colName of targetCollections) {
-        console.log(`Scanning collection: ${colName}`);
+        console.log(`Scanning collection: ${colName}...`);
         const colRef = collection(db, colName);
         const snapshot = await getDocs(colRef);
         
         if (snapshot.empty) {
-          console.log(`Collection ${colName} is already empty.`);
+          console.log(`Collection [${colName}] is already empty.`);
           continue;
         }
 
-        console.log(`Found ${snapshot.size} documents in ${colName}`);
+        console.log(`Found ${snapshot.size} documents in [${colName}]`);
         
-        // Firestore batch limit is 500, we use 400 for safety
+        // Process in batches of 400 (Firestore limit is 500)
         for (let i = 0; i < snapshot.docs.length; i += 400) {
           const batch = writeBatch(db);
           const chunk = snapshot.docs.slice(i, i + 400);
@@ -196,8 +153,8 @@ export default function DataEntryPage() {
               const sessionsSnapshot = await getDocs(sessionsRef);
               
               if (!sessionsSnapshot.empty) {
-                console.log(`Found ${sessionsSnapshot.size} nested sessions for timetable ${docSnapshot.id}`);
-                // Delete sessions in their own sub-batches
+                console.log(`-> Deleting ${sessionsSnapshot.size} nested sessions for timetable: ${docSnapshot.id}`);
+                // Delete sessions in their own chunks
                 for (let j = 0; j < sessionsSnapshot.docs.length; j += 400) {
                   const subBatch = writeBatch(db);
                   sessionsSnapshot.docs.slice(j, j + 400).forEach(sDoc => {
@@ -205,7 +162,6 @@ export default function DataEntryPage() {
                     totalDeleted++;
                   });
                   await subBatch.commit();
-                  console.log(`Committed sub-batch for sessions...`);
                 }
               }
             }
@@ -213,22 +169,22 @@ export default function DataEntryPage() {
             totalDeleted++;
           }
           await batch.commit();
-          console.log(`Committed batch for ${colName}...`);
+          console.log(`Committed deletion batch for [${colName}]`);
         }
       }
 
-      console.log(`Wipe complete. Total records purged: ${totalDeleted}`);
+      console.log(`--- WIPE COMPLETE. TOTAL DELETED: ${totalDeleted} ---`);
       toast({ 
         title: "Database Reset Successful", 
-        description: `Permanently removed ${totalDeleted} entries. The system is now a clean slate.` 
+        description: `Permanently removed ${totalDeleted} entries. Your database is now empty.` 
       });
       setRawInput("");
     } catch (e: any) {
-      console.error("Critical wipe failure:", e);
+      console.error("CRITICAL WIPE FAILURE:", e);
       toast({ 
         variant: "destructive", 
         title: "Wipe Operation Failed", 
-        description: e.message || "A secure database error occurred. Check the console for full details." 
+        description: e.message || "A secure database error occurred. Check the console (F12) for details." 
       });
     } finally {
       setIsProcessing(false)
@@ -384,7 +340,7 @@ export default function DataEntryPage() {
                   <Database className="h-5 w-5 text-primary" />
                   Excel Copy-Paste Area
                 </CardTitle>
-                <CardDescription>Paste your spreadsheet rows here. Duplicates will be ignored.</CardDescription>
+                <CardDescription>Paste your spreadsheet rows here. Identical rows are automatically ignored.</CardDescription>
               </CardHeader>
               <CardContent className="flex-1 min-h-0">
                 <Textarea 
