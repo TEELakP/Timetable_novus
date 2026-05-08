@@ -1,3 +1,4 @@
+
 "use client"
 
 import React, { useMemo, useState, useRef } from "react"
@@ -140,8 +141,7 @@ export default function PrintPage() {
     
     if (selectedCampuses.length > 0) {
       data = data.filter(s => {
-        const room = rooms?.find(r => r.name === s.room)
-        return room && selectedCampuses.includes(room.campus)
+        return selectedCampuses.includes(s.campus)
       })
     }
 
@@ -161,7 +161,7 @@ export default function PrintPage() {
     }
     
     return data
-  }, [sessions, selectedCampuses, selectedTeachers, selectedUnits, selectedTypes, rooms, units])
+  }, [sessions, selectedCampuses, selectedTeachers, selectedUnits, selectedTypes, units])
 
   const sessionsByDay = useMemo(() => {
     const grouped: Record<string, TimetableEntry[]> = {}
@@ -178,12 +178,13 @@ export default function PrintPage() {
     
     setIsDownloading(true)
     try {
-      // Increased quality and specific dimensions for better clarity
+      // quality: 0.95 and fontEmbedCSS: '' are used to fix the SecurityError and improve performance
       const dataUrl = await toJpeg(timetableRef.current, { 
-        quality: 1.0,
+        quality: 0.95,
         backgroundColor: '#ffffff',
         cacheBust: true,
         pixelRatio: 2, // Retains clarity for overlapping small text
+        fontEmbedCSS: '', // CRITICAL FIX: Stops html-to-image from crashing on cross-origin CSS rules
       })
       const link = document.createElement('a')
       link.download = `Novus_Weekly_Timetable_${new Date().toISOString().split('T')[0]}.jpg`
@@ -280,7 +281,7 @@ export default function PrintPage() {
       <div className="overflow-x-auto p-4 bg-muted/20 rounded-lg">
         <div 
           ref={timetableRef}
-          className="bg-white p-8 rounded-lg border shadow-sm min-w-[1280px] text-black"
+          className="bg-white p-8 rounded-lg border shadow-sm min-w-[1440px] text-black"
         >
           <div className="mb-6 text-center border-b pb-6">
             <h1 className="text-2xl font-black uppercase tracking-tighter text-primary">Novus Academic Weekly Timetable</h1>
@@ -293,48 +294,49 @@ export default function PrintPage() {
                 <div className="bg-gray-100 border-b border-gray-300 py-3 text-center font-black text-[12px] uppercase tracking-tight text-gray-700">
                   {day}
                 </div>
-                <div className="flex-1 bg-gray-50/20 p-2 space-y-2 min-h-[700px]">
+                <div className="flex-1 bg-gray-50/20 p-2 space-y-2 min-h-[800px]">
                   {sessionsByDay[day].map(session => {
                     const unit = units?.find(u => u.id === session.unitId)
                     const teacher = teachers?.find(t => t.id === session.teacherId)
                     
                     let bgColor = "bg-blue-50"
-                    let borderColor = "border-blue-300"
+                    let borderColor = "border-blue-200"
                     
                     if (unit?.type === 'practical') {
                       bgColor = "bg-orange-50"
-                      borderColor = "border-orange-300"
+                      borderColor = "border-orange-200"
                     } else if (unit?.type === 'online') {
                       bgColor = "bg-emerald-50"
-                      borderColor = "border-emerald-300"
+                      borderColor = "border-emerald-200"
                     } else if (unit?.name.includes('ELICOS')) {
                       bgColor = "bg-sky-50"
-                      borderColor = "border-sky-300"
+                      borderColor = "border-sky-200"
                     }
 
                     return (
                       <div 
                         key={session.id} 
                         className={cn(
-                          "p-2 rounded border shadow-sm flex flex-col items-center text-center gap-1.5 transition-all",
+                          "p-2.5 rounded border shadow-sm flex flex-col items-center text-center gap-1.5 transition-all",
                           bgColor,
                           borderColor
                         )}
                       >
                         <div className="w-full">
-                          <div className="text-[11px] font-black leading-tight text-gray-900 break-words mb-1">
-                            {unit?.name}
+                          <div className="text-[10px] font-black leading-tight text-gray-900 break-words mb-1">
+                            {unit?.name || session.unitId}
                           </div>
-                          <div className="text-[10px] font-bold text-gray-600 truncate px-1">
+                          <div className="text-[9px] font-bold text-gray-600 truncate px-1">
                             {teacher?.name || 'Unassigned'}
                           </div>
                         </div>
                         
-                        <div className="w-full flex items-center justify-between mt-auto pt-1.5 border-t border-gray-400/20">
-                          <div className="text-[9px] font-black text-gray-800 bg-white/60 px-1 rounded">
+                        <div className="w-full flex items-center justify-between mt-auto pt-1.5 border-t border-gray-400/10">
+                          <div className="text-[8px] font-black text-gray-800 bg-white/60 px-1 rounded flex items-center gap-1">
+                            <Clock className="h-2 w-2" />
                             {session.startTime}-{session.endTime}
                           </div>
-                          <div className="text-[9px] font-bold text-primary truncate max-w-[50%]">
+                          <div className="text-[8px] font-bold text-primary truncate max-w-[50%]">
                             {session.room}
                           </div>
                         </div>
@@ -353,9 +355,9 @@ export default function PrintPage() {
 
           <div className="mt-6 pt-6 border-t text-[10px] text-muted-foreground flex justify-between items-center">
             <div className="flex gap-4">
-              <span className="flex items-center gap-1"><div className="w-2 h-2 bg-blue-100 border border-blue-300"></div> Theory</span>
-              <span className="flex items-center gap-1"><div className="w-2 h-2 bg-orange-100 border border-orange-300"></div> Practical</span>
-              <span className="flex items-center gap-1"><div className="w-2 h-2 bg-emerald-100 border border-emerald-300"></div> Online</span>
+              <span className="flex items-center gap-1"><div className="w-2 h-2 bg-blue-100 border border-blue-200"></div> Theory</span>
+              <span className="flex items-center gap-1"><div className="w-2 h-2 bg-orange-100 border border-orange-200"></div> Practical</span>
+              <span className="flex items-center gap-1"><div className="w-2 h-2 bg-emerald-100 border border-emerald-200"></div> Online</span>
             </div>
             <p className="font-black uppercase tracking-widest text-primary">Novus Education Australia</p>
           </div>
