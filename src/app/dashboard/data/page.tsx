@@ -125,8 +125,8 @@ export default function DataEntryPage() {
     setIsWipeDialogOpen(false)
     
     try {
-      let totalDeleted = 0;
       const targetCollections = ["teachers", "academicUnits", "rooms", "schedulingRules", "timetables"];
+      let totalDeleted = 0;
 
       for (const colName of targetCollections) {
         const colRef = collection(db, colName);
@@ -134,24 +134,21 @@ export default function DataEntryPage() {
         
         if (snapshot.empty) continue;
         
+        // Chunk into batches of 400 (limit is 500)
         for (let i = 0; i < snapshot.docs.length; i += 400) {
           const batch = writeBatch(db);
           const chunk = snapshot.docs.slice(i, i + 400);
           
           for (const docSnapshot of chunk) {
+            // Delete sub-collections for timetables
             if (colName === "timetables") {
               const sessionsRef = collection(db, "timetables", docSnapshot.id, "classSessions");
               const sessionsSnapshot = await getDocs(sessionsRef);
-              
               if (!sessionsSnapshot.empty) {
-                for (let j = 0; j < sessionsSnapshot.docs.length; j += 400) {
-                  const subBatch = writeBatch(db);
-                  sessionsSnapshot.docs.slice(j, j + 400).forEach(sDoc => {
-                    subBatch.delete(sDoc.ref);
-                    totalDeleted++;
-                  });
-                  await subBatch.commit();
-                }
+                sessionsSnapshot.docs.forEach(sDoc => {
+                  batch.delete(sDoc.ref);
+                  totalDeleted++;
+                });
               }
             }
             batch.delete(docSnapshot.ref);
@@ -188,10 +185,11 @@ export default function DataEntryPage() {
 
     try {
       parsedData.forEach((row: any) => {
-        const teacherId = row.trainer.toLowerCase().replace(/[^a-z0-9]/g, '-')
-        const unitId = row.unit.toLowerCase().replace(/[^a-z0-9]/g, '-')
-        const roomId = `${row.campus}-${row.roomName}`.toLowerCase().replace(/[^a-z0-9]/g, '-')
+        // Normalize IDs to prevent duplicates
+        const teacherId = row.trainer.toLowerCase().trim().replace(/[^a-z0-9]/g, '-')
+        const unitId = row.unit.toLowerCase().trim().replace(/[^a-z0-9]/g, '-')
         const campus = (row.campus || "Online") as Campus
+        const roomId = `${campus}-${row.roomName}`.toLowerCase().trim().replace(/[^a-z0-9]/g, '-')
 
         if (teacherId && !processedTeachers.has(teacherId)) {
           batch.set(doc(db, "teachers", teacherId), { 
@@ -218,7 +216,6 @@ export default function DataEntryPage() {
 
         if (roomId && !processedRooms.has(roomId)) {
           const roomType: RoomType = row.siteName.toLowerCase().includes('kitchen') || row.siteName.toLowerCase().includes('workshop') ? 'Workshop' : 'Classroom'
-          
           batch.set(doc(db, "rooms", roomId), { 
             id: roomId, 
             name: row.roomName, 
@@ -232,7 +229,10 @@ export default function DataEntryPage() {
         }
 
         const startT = parseTime(row.start)
-        const sessionKey = `${row.trainer}-${row.unit}-${row.day}-${startT}-${row.roomName}`.toLowerCase().replace(/[^a-z0-9]/g, '-')
+        const finishT = parseTime(row.finish)
+        
+        // Deterministic session ID based on teacher, unit, day, and time to prevent duplicates
+        const sessionKey = `${teacherId}-${unitId}-${row.day.toLowerCase()}-${startT.replace(':', '')}`.replace(/[^a-z0-9]/g, '-')
         const sessionId = `s-${sessionKey}`
         
         batch.set(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionId), {
@@ -243,14 +243,15 @@ export default function DataEntryPage() {
           campus,
           day: row.day,
           startTime: startT,
-          endTime: parseTime(row.finish)
+          endTime: finishT,
+          acknowledged: false
         }, { merge: true })
       })
 
       await batch.commit()
-      toast({ title: "Sync Complete", description: `Processed ${parsedData.length} unique records.` })
-    } catch (e) {
-      toast({ variant: "destructive", title: "Sync Failed" })
+      toast({ title: "Sync Complete", description: `Processed ${parsedData.length} records.` })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Sync Failed", description: e.message })
     } finally {
       setIsProcessing(false)
     }
@@ -426,7 +427,7 @@ export default function DataEntryPage() {
               Nuclear Database Wipe
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete ALL documents across ALL collections. This action cannot be undone.
+              This will permanently delete ALL documents across ALL collections. This action cannot be undone and will resolve the "sandbox confirm" error.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

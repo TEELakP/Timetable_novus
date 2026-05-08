@@ -17,7 +17,8 @@ import {
   Clock,
   Settings2,
   AlertTriangle,
-  MapPin
+  MapPin,
+  RefreshCw
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -46,16 +47,10 @@ import { TimetableEntry, Teacher, Unit, Room, Day, Campus } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc } from "firebase/firestore"
+import { collection, doc, getDocs, writeBatch } from "firebase/firestore"
 import { deleteDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
-
-const DELIVERY_MODES = [
-  { value: 'theory', label: 'Classroom' },
-  { value: 'practical', label: 'Workshop' },
-  { value: 'online', label: 'Online' },
-]
 
 function MultiSelectFilter({ 
   label, 
@@ -151,11 +146,9 @@ export default function TimetablePage() {
   const { data: sessions, isLoading: loadingSessions } = useCollection<TimetableEntry>(sessionsRef)
 
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
-  
   const [selectedCampuses, setSelectedCampuses] = useState<string[]>([])
   const [selectedTeachers, setSelectedTeachers] = useState<string[]>([])
   const [selectedUnits, setSelectedUnits] = useState<string[]>([])
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [selectedDays, setSelectedDays] = useState<string[]>([])
   const [selectedRooms, setSelectedRooms] = useState<string[]>([])
 
@@ -171,24 +164,18 @@ export default function TimetablePage() {
   })
 
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false)
+  const [isReseting, setIsReseting] = useState(false)
 
   const filteredSessions = useMemo(() => {
     if (!sessions) return []
     let data = [...sessions]
     
-    if (selectedCampuses.length > 0) {
-      data = data.filter(s => selectedCampuses.includes(s.campus))
-    }
+    if (selectedCampuses.length > 0) data = data.filter(s => selectedCampuses.includes(s.campus))
     if (selectedTeachers.length > 0) data = data.filter(s => selectedTeachers.includes(s.teacherId))
     if (selectedUnits.length > 0) data = data.filter(s => selectedUnits.includes(s.unitId))
     if (selectedDays.length > 0) data = data.filter(s => selectedDays.includes(s.day))
     if (selectedRooms.length > 0) data = data.filter(s => selectedRooms.includes(s.room))
-    if (selectedTypes.length > 0) {
-      data = data.filter(s => {
-        const unit = units?.find(u => u.id === s.unitId)
-        return unit && selectedTypes.includes(unit.type)
-      })
-    }
     
     return data.sort((a, b) => {
       const dayIndexA = DAYS.indexOf(a.day)
@@ -196,7 +183,7 @@ export default function TimetablePage() {
       if (dayIndexA !== dayIndexB) return dayIndexA - dayIndexB
       return a.startTime.localeCompare(b.startTime)
     })
-  }, [sessions, selectedCampuses, selectedTeachers, selectedUnits, selectedTypes, selectedDays, selectedRooms, units])
+  }, [sessions, selectedCampuses, selectedTeachers, selectedUnits, selectedDays, selectedRooms])
 
   const roomOptions = useMemo(() => {
     if (!sessions) return []
@@ -217,12 +204,25 @@ export default function TimetablePage() {
     toast({ title: "Session Added" })
   }
 
-  const confirmDeleteSession = () => {
-    if (!sessionToDelete) return
-    const sessionRef = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionToDelete)
-    deleteDocumentNonBlocking(sessionRef)
-    setSessionToDelete(null)
-    toast({ title: "Session Removed" })
+  const handleEmergencyReset = async () => {
+    setIsReseting(true)
+    try {
+      const sessionsSnapshot = await getDocs(sessionsRef)
+      if (sessionsSnapshot.empty) {
+        toast({ title: "Database is already empty" })
+        return
+      }
+      
+      const batch = writeBatch(db)
+      sessionsSnapshot.docs.forEach(docSnap => batch.delete(docSnap.ref))
+      await batch.commit()
+      toast({ title: "Database Wiped Successfully" })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Reset Failed", description: e.message })
+    } finally {
+      setIsReseting(false)
+      setIsResetDialogOpen(false)
+    }
   }
 
   if (loadingTeachers || loadingUnits || loadingRooms || loadingSessions) {
@@ -241,6 +241,9 @@ export default function TimetablePage() {
           <p className="text-muted-foreground text-sm">Reviewing {filteredSessions.length} active sessions.</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setIsResetDialogOpen(true)} className="text-destructive border-destructive/20 hover:bg-destructive/10">
+            <Trash2 className="mr-2 h-4 w-4" /> Emergency Reset
+          </Button>
           <Button onClick={() => setIsAddSessionOpen(true)} className="bg-primary">
             <Plus className="mr-2 h-4 w-4" /> New Session
           </Button>
@@ -300,7 +303,7 @@ export default function TimetablePage() {
             variant="ghost" 
             size="sm" 
             className="h-8 text-[10px] font-bold uppercase text-primary/60"
-            onClick={() => { setSelectedCampuses([]); setSelectedTeachers([]); setSelectedUnits([]); setSelectedTypes([]); setSelectedDays([]); setSelectedRooms([]); }}
+            onClick={() => { setSelectedCampuses([]); setSelectedTeachers([]); setSelectedUnits([]); setSelectedDays([]); setSelectedRooms([]); }}
           >
             Clear All
           </Button>
@@ -310,9 +313,9 @@ export default function TimetablePage() {
       <div className="grid grid-cols-1 gap-6">
         {viewMode === 'grid' ? (
           <div className="overflow-x-auto p-1">
-             <div className="grid grid-cols-7 border rounded-xl overflow-hidden shadow-xl bg-card">
+             <div className="grid grid-cols-7 border rounded-xl overflow-hidden shadow-xl bg-card min-w-[1200px]">
                 {DAYS.map(day => (
-                  <div key={day} className="flex flex-col border-r last:border-r-0 min-w-[150px]">
+                  <div key={day} className="flex flex-col border-r last:border-r-0">
                     <div className="bg-muted/50 border-b py-3 text-center font-black text-xs uppercase tracking-tight">
                       {day}
                     </div>
@@ -321,24 +324,17 @@ export default function TimetablePage() {
                         const unit = units?.find(u => u.id === session.unitId)
                         const teacher = teachers?.find(t => t.id === session.teacherId)
                         
-                        let bgColor = "bg-blue-600/10 text-blue-700 border-blue-200"
-                        if (unit?.type === 'practical') bgColor = "bg-orange-600/10 text-orange-700 border-orange-200"
-                        if (unit?.type === 'online') bgColor = "bg-green-600/10 text-green-700 border-green-200"
-
                         return (
                           <div 
                             key={session.id} 
-                            className={cn(
-                              "p-2 rounded-lg border shadow-sm group relative flex flex-col leading-tight",
-                              bgColor
-                            )}
+                            className="p-2 rounded-lg border shadow-sm group relative flex flex-col leading-tight bg-blue-600/5 border-blue-200"
                           >
                             <div className="flex flex-wrap items-center gap-x-1 mb-1">
-                              <span className="text-[11px] font-black uppercase truncate max-w-full">
+                              <span className="text-[11px] font-black uppercase truncate max-w-full text-blue-900">
                                 {unit?.name || session.unitId}
                               </span>
                             </div>
-                            <div className="text-[10px] font-bold opacity-80 truncate mb-1">
+                            <div className="text-[10px] font-bold opacity-80 truncate mb-1 text-blue-800">
                               {teacher?.name || 'Unassigned'}
                             </div>
                             <div className="flex items-center justify-between mt-auto">
@@ -414,16 +410,20 @@ export default function TimetablePage() {
         )}
       </div>
 
-      <AlertDialog open={!!sessionToDelete} onOpenChange={(open) => !open && setSessionToDelete(null)}>
+      <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Session</AlertDialogTitle>
-            <AlertDialogDescription>Remove this class from the schedule?</AlertDialogDescription>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" /> Emergency Reset
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will clear ALL sessions from your database. Use this if the main Wipe button is failing.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteSession} className="bg-destructive text-destructive-foreground">
-              Remove Session
+            <AlertDialogAction onClick={handleEmergencyReset} disabled={isReseting} className="bg-destructive text-destructive-foreground">
+              {isReseting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Reset"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
