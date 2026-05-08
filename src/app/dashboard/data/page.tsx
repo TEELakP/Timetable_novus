@@ -156,62 +156,52 @@ export default function DataEntryPage() {
   }, [rawInput])
 
   const handleClearDatabase = async () => {
-    const isReady = !loadingTeachers && !loadingUnits && !loadingRooms && !loadingSessions && !loadingRules
-    if (!isReady) {
-      toast({ title: "Please Wait", description: "Data is still loading from the database." })
-      return
-    }
-
-    if (!confirm("DANGER: This will delete ALL current institutional data. This action is irreversible. Continue?")) return
+    if (!confirm("DANGER: This will delete ALL current institutional data (Teachers, Units, Rooms, Sessions). This action is irreversible. Continue?")) return
     
     setIsProcessing(true)
-    const batch = writeBatch(db)
-    let count = 0
-
     try {
-      // Teachers
-      teachers?.forEach(t => {
-        batch.delete(doc(db, "teachers", t.id))
-        count++
-      })
+      // We explicitly query the database directly instead of relying on React state
+      // to ensure we get everything even if hooks are still loading.
+      const collectionPaths = [
+        "teachers",
+        "academicUnits",
+        "rooms",
+        "schedulingRules",
+        `timetables/${ACTIVE_TIMETABLE_ID}/classSessions`
+      ];
 
-      // Units
-      units?.forEach(u => {
-        batch.delete(doc(db, "academicUnits", u.id))
-        count++
-      })
+      let totalDeleted = 0;
 
-      // Rooms
-      rooms?.forEach(r => {
-        batch.delete(doc(db, "rooms", r.id))
-        count++
-      })
+      for (const path of collectionPaths) {
+        const colRef = collection(db, path);
+        const snapshot = await getDocs(colRef);
+        const docs = snapshot.docs;
 
-      // Sessions
-      sessions?.forEach(s => {
-        batch.delete(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id))
-        count++
-      })
-
-      // Rules
-      rules?.forEach(rule => {
-        batch.delete(doc(db, "schedulingRules", rule.id))
-        count++
-      })
-
-      if (count > 0) {
-        await batch.commit()
-        toast({ title: "Database Wiped", description: `Successfully removed ${count} entries.` })
-      } else {
-        toast({ title: "Nothing to Delete", description: "The database is already empty." })
+        // Firestore batch limits are 500. We chunk into groups of 400.
+        for (let i = 0; i < docs.length; i += 400) {
+          const batch = writeBatch(db);
+          const chunk = docs.slice(i, i + 400);
+          
+          chunk.forEach((d) => {
+            batch.delete(d.ref);
+            totalDeleted++;
+          });
+          
+          await batch.commit();
+        }
       }
+
+      toast({ 
+        title: "Database Wiped", 
+        description: `Successfully removed ${totalDeleted} entries from the database.` 
+      });
     } catch (e: any) {
-      console.error("Wipe failed:", e)
+      console.error("Wipe failed:", e);
       toast({ 
         variant: "destructive", 
         title: "Wipe Failed", 
         description: e.message || "An error occurred while clearing the database." 
-      })
+      });
     } finally {
       setIsProcessing(false)
     }
