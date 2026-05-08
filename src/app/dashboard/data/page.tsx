@@ -156,51 +156,69 @@ export default function DataEntryPage() {
   }, [rawInput])
 
   const handleClearDatabase = async () => {
-    if (!confirm("DANGER: This will delete ALL current institutional data (Teachers, Units, Rooms, Sessions). This action is irreversible. Continue?")) return
+    if (!confirm("DANGER: This will delete ALL current institutional data including all trainers, rooms, units, and EVERY scheduled class. Continue?")) return
     
     setIsProcessing(true)
+    console.log("Starting full database wipe...");
+    
     try {
-      const collectionPaths = [
-        "teachers",
-        "academicUnits",
-        "rooms",
-        "schedulingRules",
-        "timetables",
-        `timetables/${ACTIVE_TIMETABLE_ID}/classSessions`
-      ];
-
       let totalDeleted = 0;
 
-      for (const path of collectionPaths) {
-        const colRef = collection(db, path);
+      // 1. Wipe Root Collections
+      const rootCollections = ["teachers", "academicUnits", "rooms", "schedulingRules"];
+      for (const colName of rootCollections) {
+        const colRef = collection(db, colName);
         const snapshot = await getDocs(colRef);
-        const docs = snapshot.docs;
-
-        if (docs.length === 0) continue;
-
-        for (let i = 0; i < docs.length; i += 400) {
+        console.log(`Found ${snapshot.size} docs in root collection: ${colName}`);
+        
+        for (let i = 0; i < snapshot.docs.length; i += 400) {
           const batch = writeBatch(db);
-          const chunk = docs.slice(i, i + 400);
-          
-          chunk.forEach((d) => {
+          snapshot.docs.slice(i, i + 400).forEach(d => {
             batch.delete(d.ref);
             totalDeleted++;
           });
-          
           await batch.commit();
         }
       }
 
+      // 2. Wipe Timetables and their nested Sessions
+      const timetablesRef = collection(db, "timetables");
+      const timetablesSnapshot = await getDocs(timetablesRef);
+      console.log(`Found ${timetablesSnapshot.size} timetables to process...`);
+
+      for (const timetableDoc of timetablesSnapshot.docs) {
+        // Find and wipe all nested classSessions for this timetable
+        const sessionsRef = collection(db, "timetables", timetableDoc.id, "classSessions");
+        const sessionsSnapshot = await getDocs(sessionsRef);
+        console.log(`Wiping ${sessionsSnapshot.size} sessions for timetable: ${timetableDoc.id}`);
+
+        for (let i = 0; i < sessionsSnapshot.docs.length; i += 400) {
+          const batch = writeBatch(db);
+          sessionsSnapshot.docs.slice(i, i + 400).forEach(d => {
+            batch.delete(d.ref);
+            totalDeleted++;
+          });
+          await batch.commit();
+        }
+
+        // Delete the timetable document itself
+        const finalBatch = writeBatch(db);
+        finalBatch.delete(timetableDoc.ref);
+        await finalBatch.commit();
+        totalDeleted++;
+      }
+
+      console.log(`Wipe complete. Total records removed: ${totalDeleted}`);
       toast({ 
         title: "Database Wiped", 
-        description: `Successfully removed ${totalDeleted} entries across all targeted collections.` 
+        description: `Successfully removed ${totalDeleted} entries across all collections.` 
       });
     } catch (e: any) {
-      console.error("Wipe failed:", e);
+      console.error("Wipe execution failed:", e);
       toast({ 
         variant: "destructive", 
         title: "Wipe Failed", 
-        description: e.message || "An error occurred while clearing the database." 
+        description: e.message || "An error occurred while clearing the database. Check console for details." 
       });
     } finally {
       setIsProcessing(false)
@@ -456,3 +474,4 @@ export default function DataEntryPage() {
     </div>
   )
 }
+
