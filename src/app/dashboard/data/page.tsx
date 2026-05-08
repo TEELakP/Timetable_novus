@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { 
   AlertDialog,
@@ -108,18 +108,17 @@ export default function DataEntryPage() {
     
     return lines.map((line) => {
       const parts = line.split('\t').map(p => p.trim())
-      // New 8-column format:
+      // Current 8-column format:
       // Location (0), Class (1), Day (2), Trainer (3), Email (4), Start (5), Finish (6), Class_name (7)
       if (parts.length < 8) return null
       
       const location = parts[0]
       const campus = inferCampus(location)
       
-      // Smart room assignment: If Class_name is empty, use campus/random fallback
       let roomName = parts[7]
       if (!roomName || roomName.trim() === "") {
         if (campus === 'Perth') roomName = 'P1'
-        else if (campus === 'Ultimo') roomName = 'Suite 1'
+        else if (campus === 'Ultimo') roomName = campus
         else if (campus === 'Gosford') roomName = 'A1'
         else roomName = campus
       }
@@ -143,7 +142,7 @@ export default function DataEntryPage() {
     setIsWipeDialogOpen(false)
     
     try {
-      // CRITICAL: "rooms" is EXCLUDED from the wipe to ensure institutional hierarchy persistence.
+      // EXCLUDE rooms from the wipe as per requirements
       const targetCollections = ["teachers", "academicUnits", "schedulingRules", "timetables"];
       let totalDeleted = 0;
 
@@ -153,7 +152,6 @@ export default function DataEntryPage() {
         
         if (snapshot.empty) continue;
         
-        // Use standard loop for batch chunking
         for (let i = 0; i < snapshot.docs.length; i += 400) {
           const batch = writeBatch(db);
           const chunk = snapshot.docs.slice(i, i + 400);
@@ -211,7 +209,6 @@ export default function DataEntryPage() {
 
         if (!teacherId || !unitId) return
 
-        // Propagate Teacher (Upsert)
         if (!processedTeachers.has(teacherId)) {
           batch.set(doc(db, "teachers", teacherId), { 
             id: teacherId, 
@@ -224,7 +221,6 @@ export default function DataEntryPage() {
           processedTeachers.add(teacherId)
         }
 
-        // Propagate Unit (Upsert)
         if (!processedUnits.has(unitId)) {
           batch.set(doc(db, "academicUnits", unitId), { 
             id: unitId, 
@@ -236,7 +232,6 @@ export default function DataEntryPage() {
           processedUnits.add(unitId)
         }
 
-        // Generate deterministic Session ID
         const startT = parseTime(row.start)
         const finishT = parseTime(row.finish)
         const dayKey = row.day.toLowerCase().trim()
@@ -258,7 +253,7 @@ export default function DataEntryPage() {
       })
 
       await batch.commit()
-      toast({ title: "Synchronization Complete", description: `Updated ${parsedData.length} records. All rooms referenced correctly.` })
+      toast({ title: "Synchronization Complete", description: `Updated ${parsedData.length} records. All rooms referenced.` })
     } catch (e: any) {
       toast({ variant: "destructive", title: "Sync Failed", description: e.message })
     } finally {
@@ -272,10 +267,10 @@ export default function DataEntryPage() {
     let count = 0
 
     try {
-      Object.entries(SITES_CONFIG).forEach(([campus, config]) => {
-        config.forEach(site => {
+      Object.entries(SITES_CONFIG).forEach(([campus, sites]) => {
+        sites.forEach(site => {
           site.rooms.forEach(roomName => {
-            const id = `r-${campus}-${roomName}`.toLowerCase().replace(/\s+/g, '-')
+            const id = `r-${campus}-${roomName}`.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
             batch.set(doc(db, "rooms", id), {
               id,
               name: roomName,
@@ -283,7 +278,7 @@ export default function DataEntryPage() {
               siteName: site.name,
               address: site.address,
               capacity: 30,
-              type: site.name.toLowerCase().includes('kitchen') || site.name.toLowerCase().includes('workshop') ? 'Workshop' : 'Classroom'
+              type: site.type as RoomType
             }, { merge: true })
             count++
           })
@@ -298,38 +293,12 @@ export default function DataEntryPage() {
     }
   }
 
-  const handleSyncJson = async () => {
-    setIsProcessing(true)
-    try {
-      const data = JSON.parse(jsonInput)
-      const batch = writeBatch(db)
-      data.forEach((item: any) => {
-        if (!item.id) return
-        let ref;
-        if (selectedEntity === 'sessions') {
-          ref = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", item.id)
-        } else if (selectedEntity === 'rules') {
-          ref = doc(db, "schedulingRules", item.id)
-        } else {
-          ref = doc(db, selectedEntity === 'academicUnits' ? "academicUnits" : selectedEntity, item.id)
-        }
-        batch.set(ref, item, { merge: true })
-      })
-      await batch.commit()
-      toast({ title: "JSON Update Complete" })
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Invalid JSON Structure" })
-    } finally {
-      setIsProcessing(false)
-    }
-  }
-
   return (
     <div className="flex-1 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline text-primary">Data Manager</h2>
-          <p className="text-muted-foreground text-sm">Reference institutional rooms using the 8-column Excel format.</p>
+          <p className="text-muted-foreground text-sm">8-column Excel Sync & Institutional Hierarchy Reference.</p>
         </div>
         <div className="flex gap-2">
            <Button 
@@ -353,7 +322,7 @@ export default function DataEntryPage() {
                Sync {parsedData.length} Records
              </Button>
            ) : (
-             <Button onClick={handleSyncJson} disabled={isProcessing} className="bg-primary">
+             <Button onClick={() => handleSyncJson()} disabled={isProcessing} className="bg-primary">
                {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                Save JSON
              </Button>
@@ -399,7 +368,7 @@ export default function DataEntryPage() {
                    <Table>
                      <TableHeader className="bg-muted/50 sticky top-0">
                        <TableRow>
-                         <TableHead className="text-[10px]">Location</TableHead>
+                         <TableHead className="text-[10px]">Site Address</TableHead>
                          <TableHead className="text-[10px]">Room (Referenced)</TableHead>
                          <TableHead className="text-[10px]">Subject</TableHead>
                          <TableHead className="text-[10px]">Trainer</TableHead>

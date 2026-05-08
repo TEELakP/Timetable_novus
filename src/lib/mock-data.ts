@@ -25,43 +25,50 @@ export const SITES_CONFIG = {
     { 
       name: 'Ultimo Campus', 
       address: ADDRESS_MAP['Ultimo Campus'],
-      rooms: ['Suite 1', 'Suite 2', 'Suite 3', 'Suite 4', 'Suite 5', 'Suite 6']
+      rooms: ['Makalu', 'Everest', 'Suite 1.15', 'Kanchenjunga', 'Kosciuscko', 'Kilimanjaro'],
+      type: 'Classroom'
     },
     { 
       name: 'Ultimo Kitchen', 
       address: ADDRESS_MAP['Ultimo Kitchen'],
-      rooms: ['Kitchen A', 'Kitchen B']
+      rooms: ['Kitchen A', 'Kitchen B'],
+      type: 'Workshop'
     },
     { 
       name: 'Ultimo Workshop (Automotive)', 
       address: ADDRESS_MAP['Ultimo Workshop (Automotive)'],
-      rooms: ['Bay 1', 'Bay 2']
+      rooms: ['Bay 1', 'Bay 2'],
+      type: 'Workshop'
     }
   ],
   Gosford: [
     { 
       name: 'Gosford Campus', 
       address: ADDRESS_MAP['Gosford Campus'],
-      rooms: ['A1', 'A2', 'A3', 'A4']
+      rooms: ['A1', 'A2', 'A3', 'A4'],
+      type: 'Classroom'
     },
     { 
       name: 'Gosford Kitchen', 
       address: ADDRESS_MAP['Gosford Kitchen'],
-      rooms: ['Kitchen 1']
+      rooms: ['Kitchen 1'],
+      type: 'Workshop'
     }
   ],
   Perth: [
     { 
       name: 'Perth Campus', 
       address: ADDRESS_MAP['Perth Campus'],
-      rooms: ['P1', 'P2', 'P3', 'P4']
+      rooms: ['P1', 'P2', 'P3', 'P4'],
+      type: 'Classroom'
     }
   ],
   Online: [
     { 
       name: 'Virtual Campus', 
       address: 'Remote',
-      rooms: ['Virtual Room']
+      rooms: ['Virtual Room'],
+      type: 'Classroom'
     }
   ]
 };
