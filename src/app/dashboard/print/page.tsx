@@ -179,13 +179,13 @@ export default function PrintPage() {
     
     setIsDownloading(true)
     try {
-      // quality: 0.95 and fontEmbedCSS: '' are used to fix the SecurityError and improve performance
+      // Fix security error and optimize for high quality landscape
       const dataUrl = await toJpeg(timetableRef.current, { 
         quality: 0.95,
         backgroundColor: '#ffffff',
         cacheBust: true,
-        pixelRatio: 2, // Retains clarity for overlapping small text
-        fontEmbedCSS: '', // CRITICAL FIX: Stops html-to-image from crashing on cross-origin CSS rules
+        pixelRatio: 2,
+        fontEmbedCSS: '', // Critical fix: avoids cross-origin CSS rule restrictions
       })
       const link = document.createElement('a')
       link.download = `Novus_Weekly_Timetable_${new Date().toISOString().split('T')[0]}.jpg`
@@ -215,8 +215,8 @@ export default function PrintPage() {
     <div className="flex-1 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight font-headline">Weekly Grid View</h2>
-          <p className="text-muted-foreground text-sm">A high-resolution weekly timetable optimized for sharing.</p>
+          <h2 className="text-3xl font-bold tracking-tight font-headline text-primary">Landscape Grid View</h2>
+          <p className="text-muted-foreground text-sm">Optimized for landscape printing with a wider horizontal span and compact items.</p>
         </div>
         <Button 
           onClick={handleDownloadJpg} 
@@ -282,7 +282,7 @@ export default function PrintPage() {
       <div className="overflow-x-auto p-4 bg-muted/20 rounded-lg">
         <div 
           ref={timetableRef}
-          className="bg-white p-8 rounded-lg border shadow-sm min-w-[1440px] text-black"
+          className="bg-white p-8 rounded-lg border shadow-sm min-w-[1800px] text-black"
         >
           <div className="mb-6 text-center border-b pb-6">
             <h1 className="text-2xl font-black uppercase tracking-tighter text-primary">Novus Academic Weekly Timetable</h1>
@@ -295,7 +295,7 @@ export default function PrintPage() {
                 <div className="bg-gray-100 border-b border-gray-300 py-3 text-center font-black text-[12px] uppercase tracking-tight text-gray-700">
                   {day}
                 </div>
-                <div className="flex-1 bg-gray-50/20 p-2 space-y-2 min-h-[800px]">
+                <div className="flex-1 bg-gray-50/20 p-2 space-y-2 min-h-[600px]">
                   {sessionsByDay[day].map(session => {
                     const unit = units?.find(u => u.id === session.unitId)
                     const teacher = teachers?.find(t => t.id === session.teacherId)
@@ -318,7 +318,7 @@ export default function PrintPage() {
                       <div 
                         key={session.id} 
                         className={cn(
-                          "p-2.5 rounded border shadow-sm flex flex-col items-center text-center gap-1.5 transition-all",
+                          "p-1.5 rounded border shadow-sm flex flex-col items-center text-center gap-1 transition-all",
                           bgColor,
                           borderColor
                         )}
@@ -332,7 +332,7 @@ export default function PrintPage() {
                           </div>
                         </div>
                         
-                        <div className="w-full flex items-center justify-between mt-auto pt-1.5 border-t border-gray-400/10">
+                        <div className="w-full flex items-center justify-between mt-auto pt-1 border-t border-gray-400/10">
                           <div className="text-[8px] font-black text-gray-800 bg-white/60 px-1 rounded flex items-center gap-1">
                             <Clock className="h-2 w-2" />
                             {session.startTime}-{session.endTime}
