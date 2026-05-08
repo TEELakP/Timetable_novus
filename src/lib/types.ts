@@ -44,6 +44,7 @@ export interface TimetableEntry {
   startTime: string;
   endTime: string;
   room: string;
+  campus: Campus; // Direct campus assignment for robust filtering
   isConflict?: boolean;
   acknowledged?: boolean;
 }

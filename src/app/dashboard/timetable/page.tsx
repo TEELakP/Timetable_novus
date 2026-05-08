@@ -16,7 +16,8 @@ import {
   User as UserIcon,
   Clock,
   Settings2,
-  AlertTriangle
+  AlertTriangle,
+  MapPin
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
@@ -24,7 +25,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -42,7 +42,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { DAYS, CAMPUSES } from "@/lib/mock-data"
-import { TimetableEntry, Teacher, Unit, Room, Day } from "@/lib/types"
+import { TimetableEntry, Teacher, Unit, Room, Day, Campus } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
@@ -157,8 +157,8 @@ export default function TimetablePage() {
   const [selectedUnits, setSelectedUnits] = useState<string[]>([])
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [selectedDays, setSelectedDays] = useState<string[]>([])
+  const [selectedRooms, setSelectedRooms] = useState<string[]>([])
 
-  // New Session state
   const [isAddSessionOpen, setIsAddSessionOpen] = useState(false)
   const [newSession, setNewSession] = useState({
     unitId: "",
@@ -166,45 +166,23 @@ export default function TimetablePage() {
     day: "Monday" as Day,
     startTime: "09:00",
     endTime: "11:00",
-    room: ""
+    room: "",
+    campus: "Ultimo" as Campus
   })
 
-  // Deletion state
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
 
   const filteredSessions = useMemo(() => {
-    if (!sessions || !teachers || !units) return []
-    
-    // Aggressive filtering of invalid or placeholder data
-    let data = sessions.filter(s => {
-      const teacher = teachers.find(t => t.id === s.teacherId)
-      const unit = units.find(u => u.id === s.unitId)
-      
-      const isInvalidTeacher = !s.teacherId || 
-                             s.teacherId.toLowerCase().includes('unassigned') || 
-                             s.teacherId.toLowerCase().includes('n/a') || 
-                             s.teacherId.toLowerCase().includes('unknown') ||
-                             s.teacherId.trim() === ''
-      
-      const isInvalidUnit = !s.unitId || 
-                           s.unitId.toLowerCase().includes('unassigned') || 
-                           s.unitId.toLowerCase().includes('n/a') || 
-                           s.unitId.toLowerCase().includes('unknown') ||
-                           s.unitId.trim() === ''
-
-      // Valid if it's not a placeholder AND the linked resource actually exists in DB
-      return !!teacher && !isInvalidTeacher && !!unit && !isInvalidUnit
-    })
+    if (!sessions) return []
+    let data = [...sessions]
     
     if (selectedCampuses.length > 0) {
-      data = data.filter(s => {
-        const room = rooms?.find(r => r.name === s.room)
-        return room && selectedCampuses.includes(room.campus)
-      })
+      data = data.filter(s => selectedCampuses.includes(s.campus))
     }
     if (selectedTeachers.length > 0) data = data.filter(s => selectedTeachers.includes(s.teacherId))
     if (selectedUnits.length > 0) data = data.filter(s => selectedUnits.includes(s.unitId))
     if (selectedDays.length > 0) data = data.filter(s => selectedDays.includes(s.day))
+    if (selectedRooms.length > 0) data = data.filter(s => selectedRooms.includes(s.room))
     if (selectedTypes.length > 0) {
       data = data.filter(s => {
         const unit = units?.find(u => u.id === s.unitId)
@@ -218,15 +196,13 @@ export default function TimetablePage() {
       if (dayIndexA !== dayIndexB) return dayIndexA - dayIndexB
       return a.startTime.localeCompare(b.startTime)
     })
-  }, [sessions, teachers, units, selectedCampuses, selectedTeachers, selectedUnits, selectedTypes, selectedDays, rooms])
+  }, [sessions, selectedCampuses, selectedTeachers, selectedUnits, selectedTypes, selectedDays, selectedRooms, units])
 
-  const sessionsByDay = useMemo(() => {
-    const grouped: Record<string, TimetableEntry[]> = {}
-    DAYS.forEach(day => {
-      grouped[day] = filteredSessions.filter(s => s.day === day)
-    })
-    return grouped
-  }, [filteredSessions])
+  const roomOptions = useMemo(() => {
+    if (!sessions) return []
+    const uniqueRooms = Array.from(new Set(sessions.map(s => s.room).filter(Boolean)))
+    return uniqueRooms.sort().map(r => ({ label: r, value: r }))
+  }, [sessions])
 
   const handleAddSession = () => {
     if (!newSession.unitId || !newSession.teacherId) return
@@ -246,7 +222,7 @@ export default function TimetablePage() {
     const sessionRef = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", sessionToDelete)
     deleteDocumentNonBlocking(sessionRef)
     setSessionToDelete(null)
-    toast({ title: "Session Removed", description: "The scheduled class has been deleted." })
+    toast({ title: "Session Removed" })
   }
 
   if (loadingTeachers || loadingUnits || loadingRooms || loadingSessions) {
@@ -262,81 +238,12 @@ export default function TimetablePage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight font-headline">Weekly Overview</h2>
-          <p className="text-muted-foreground text-sm">Reviewing {filteredSessions.length} active sessions across the network.</p>
+          <p className="text-muted-foreground text-sm">Reviewing {filteredSessions.length} active sessions.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Dialog open={isAddSessionOpen} onOpenChange={setIsAddSessionOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-primary hover:bg-primary/90">
-                <Plus className="mr-2 h-4 w-4" /> New Session
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>Add Manual Session</DialogTitle>
-                <DialogDescription>Create a single scheduled session.</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label>Academic Unit</Label>
-                  <Select value={newSession.unitId} onValueChange={(v) => setNewSession({...newSession, unitId: v})}>
-                    <SelectTrigger><SelectValue placeholder="Select Subject" /></SelectTrigger>
-                    <SelectContent>
-                      {units?.sort((a,b) => a.name.localeCompare(b.name)).map(u => (
-                        <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Trainer</Label>
-                  <Select value={newSession.teacherId} onValueChange={(v) => setNewSession({...newSession, teacherId: v})}>
-                    <SelectTrigger><SelectValue placeholder="Select Trainer" /></SelectTrigger>
-                    <SelectContent>
-                      {teachers?.sort((a,b) => a.name.localeCompare(b.name)).map(t => (
-                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Day</Label>
-                    <Select value={newSession.day} onValueChange={(v: Day) => setNewSession({...newSession, day: v})}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Location</Label>
-                    <Select value={newSession.room} onValueChange={(v) => setNewSession({...newSession, room: v})}>
-                      <SelectTrigger><SelectValue placeholder="Room" /></SelectTrigger>
-                      <SelectContent>
-                        {rooms?.sort((a,b) => a.name.localeCompare(b.name)).map(r => (
-                          <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Start Time</Label>
-                    <Input type="time" value={newSession.startTime} onChange={(e) => setNewSession({...newSession, startTime: e.target.value})} />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>End Time</Label>
-                    <Input type="time" value={newSession.endTime} onChange={(e) => setNewSession({...newSession, endTime: e.target.value})} />
-                  </div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button onClick={handleAddSession}>Save Session</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={() => setIsAddSessionOpen(true)} className="bg-primary">
+            <Plus className="mr-2 h-4 w-4" /> New Session
+          </Button>
           <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
             <TabsList className="bg-muted/50 p-1">
               <TabsTrigger value="grid" className="gap-2 h-8">
@@ -365,11 +272,19 @@ export default function TimetablePage() {
         />
 
         <MultiSelectFilter 
-          label="Sites"
-          icon={DoorOpen}
+          label="Cities"
+          icon={MapPin}
           options={CAMPUSES.map(c => ({ label: c, value: c }))}
           selected={selectedCampuses}
           onChange={setSelectedCampuses}
+        />
+
+        <MultiSelectFilter 
+          label="Rooms"
+          icon={DoorOpen}
+          options={roomOptions}
+          selected={selectedRooms}
+          onChange={setSelectedRooms}
         />
 
         <MultiSelectFilter 
@@ -380,28 +295,12 @@ export default function TimetablePage() {
           onChange={setSelectedTeachers}
         />
 
-        <MultiSelectFilter 
-          label="Subjects"
-          icon={BookOpen}
-          options={units?.sort((a,b) => a.name.localeCompare(b.name)).map(u => ({ label: u.name, value: u.id })) || []}
-          selected={selectedUnits}
-          onChange={setSelectedUnits}
-        />
-
-        <MultiSelectFilter 
-          label="Modes"
-          icon={Settings2}
-          options={DELIVERY_MODES}
-          selected={selectedTypes}
-          onChange={setSelectedTypes}
-        />
-
-        {(selectedCampuses.length > 0 || selectedTeachers.length > 0 || selectedUnits.length > 0 || selectedTypes.length > 0 || selectedDays.length > 0) && (
+        {(selectedCampuses.length > 0 || selectedTeachers.length > 0 || selectedRooms.length > 0 || selectedDays.length > 0) && (
           <Button 
             variant="ghost" 
             size="sm" 
             className="h-8 text-[10px] font-bold uppercase text-primary/60"
-            onClick={() => { setSelectedCampuses([]); setSelectedTeachers([]); setSelectedUnits([]); setSelectedTypes([]); setSelectedDays([]); }}
+            onClick={() => { setSelectedCampuses([]); setSelectedTeachers([]); setSelectedUnits([]); setSelectedTypes([]); setSelectedDays([]); setSelectedRooms([]); }}
           >
             Clear All
           </Button>
@@ -418,7 +317,7 @@ export default function TimetablePage() {
                       {day}
                     </div>
                     <div className="flex-1 bg-background p-1.5 space-y-1.5 min-h-[600px]">
-                      {sessionsByDay[day].map(session => {
+                      {filteredSessions.filter(s => s.day === day).map(session => {
                         const unit = units?.find(u => u.id === session.unitId)
                         const teacher = teachers?.find(t => t.id === session.teacherId)
                         
@@ -434,17 +333,20 @@ export default function TimetablePage() {
                               bgColor
                             )}
                           >
-                            <div className="flex flex-wrap items-center gap-x-1 mb-0.5">
-                              <span className="text-[12px] font-black tracking-tighter uppercase truncate max-w-full">
-                                {unit?.name}
-                              </span>
-                              <span className="text-[11px] font-bold opacity-80 truncate">
-                                • {teacher?.name}
+                            <div className="flex flex-wrap items-center gap-x-1 mb-1">
+                              <span className="text-[11px] font-black uppercase truncate max-w-full">
+                                {unit?.name || session.unitId}
                               </span>
                             </div>
-                            <div className="text-[10px] font-bold opacity-70 whitespace-nowrap flex items-center gap-1">
-                              <Clock className="h-2.5 w-2.5" />
-                              {session.startTime}-{session.endTime}
+                            <div className="text-[10px] font-bold opacity-80 truncate mb-1">
+                              {teacher?.name || 'Unassigned'}
+                            </div>
+                            <div className="flex items-center justify-between mt-auto">
+                              <div className="text-[9px] font-black opacity-70 whitespace-nowrap flex items-center gap-1">
+                                <Clock className="h-2.5 w-2.5" />
+                                {session.startTime}
+                              </div>
+                              <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-white/50">{session.room}</Badge>
                             </div>
                             <Button 
                               variant="ghost" 
@@ -464,87 +366,95 @@ export default function TimetablePage() {
           </div>
         ) : (
           <Card className="border-none shadow-xl bg-card">
-            <CardHeader>
-              <CardTitle className="font-headline">Master List</CardTitle>
-              <CardDescription>Comprehensive list of all scheduled academic activities.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border overflow-hidden">
-                <Table>
-                  <TableHeader className="bg-muted/30">
-                    <TableRow>
-                      <TableHead>Day</TableHead>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Academic Unit</TableHead>
-                      <TableHead>Trainer</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredSessions.map((session) => {
-                      const unit = units?.find(u => u.id === session.unitId)
-                      const teacher = teachers?.find(t => t.id === session.teacherId)
-                      return (
-                        <TableRow key={session.id} className="group">
-                          <TableCell className="font-bold text-xs uppercase text-primary/70">{session.day}</TableCell>
-                          <TableCell className="text-xs font-mono">{session.startTime} - {session.endTime}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-col">
-                              <span className="font-bold text-sm">{unit?.name}</span>
-                              <span className={cn(
-                                "text-[10px] uppercase font-bold px-1.5 rounded w-fit",
-                                unit?.type === 'theory' ? "bg-blue-100 text-blue-700" :
-                                unit?.type === 'practical' ? "bg-orange-100 text-orange-700" :
-                                "bg-emerald-100 text-emerald-700"
-                              )}>
-                                {unit?.type === 'theory' ? 'Classroom' : unit?.type === 'practical' ? 'Workshop' : 'Online'}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-sm font-medium">{teacher?.name}</TableCell>
-                          <TableCell className="text-sm">{session.room}</TableCell>
-                          <TableCell className="text-right">
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100"
-                              onClick={() => setSessionToDelete(session.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader className="bg-muted/30">
+                  <TableRow>
+                    <TableHead>Day</TableHead>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Academic Unit</TableHead>
+                    <TableHead>Trainer</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredSessions.map((session) => {
+                    const unit = units?.find(u => u.id === session.unitId)
+                    const teacher = teachers?.find(t => t.id === session.teacherId)
+                    return (
+                      <TableRow key={session.id} className="group">
+                        <TableCell className="font-bold text-xs uppercase text-primary/70">{session.day}</TableCell>
+                        <TableCell className="text-xs font-mono">{session.startTime} - {session.endTime}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-bold text-sm">{unit?.name || session.unitId}</span>
+                            <span className="text-[9px] text-muted-foreground uppercase">{session.campus}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm font-medium">{teacher?.name || 'Unassigned'}</TableCell>
+                        <TableCell className="text-sm">{session.room}</TableCell>
+                        <TableCell className="text-right">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100"
+                            onClick={() => setSessionToDelete(session.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         )}
       </div>
 
-      {/* Session Deletion Confirmation */}
       <AlertDialog open={!!sessionToDelete} onOpenChange={(open) => !open && setSessionToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-              Delete Session
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to remove this class from the schedule? This action will permanently delete this instance from the weekly timetable.
-            </AlertDialogDescription>
+            <AlertDialogTitle>Delete Session</AlertDialogTitle>
+            <AlertDialogDescription>Remove this class from the schedule?</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteSession} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction onClick={confirmDeleteSession} className="bg-destructive text-destructive-foreground">
               Remove Session
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={isAddSessionOpen} onOpenChange={setIsAddSessionOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader><DialogTitle>Add Manual Session</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>Campus</Label>
+              <Select value={newSession.campus} onValueChange={(v: Campus) => setNewSession({...newSession, campus: v})}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CAMPUSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Subject</Label>
+              <Select value={newSession.unitId} onValueChange={(v) => setNewSession({...newSession, unitId: v})}>
+                <SelectTrigger><SelectValue placeholder="Select Subject" /></SelectTrigger>
+                <SelectContent>
+                  {units?.map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter><Button onClick={handleAddSession}>Save Session</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
