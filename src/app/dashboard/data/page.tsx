@@ -1,4 +1,3 @@
-
 "use client"
 
 import React, { useState, useMemo, useEffect } from "react"
@@ -84,11 +83,12 @@ export default function DataEntryPage() {
   const parseTime = (timeStr: string) => {
     if (!timeStr) return "09:00"
     const clean = timeStr.trim().toUpperCase()
-    const match = clean.match(/(\d+):?(\d*):?(\d*)\s*(AM|PM)?/)
+    // Support formats: 4:00 PM, 9:30:00 AM, 16:30, etc.
+    const match = clean.match(/(\d+):(\d+)(?::(\d+))?\s*(AM|PM)?/)
     if (!match) return "09:00"
 
     let hour = parseInt(match[1])
-    const min = match[2] ? match[2].padStart(2, '0') : "00"
+    const min = match[2].padStart(2, '0')
     const ampm = match[4]
 
     if (ampm === "PM" && hour < 12) hour += 12
@@ -229,15 +229,17 @@ export default function DataEntryPage() {
         }
 
         if (!processedRooms.has(roomId)) {
-          const site = SITES_CONFIG[campus]?.find(s => s.name === row.siteName)
+          // If the location matches one of our site addresses, we assign the correct room type
+          const roomType: RoomType = row.siteName.toLowerCase().includes('kitchen') || row.siteName.toLowerCase().includes('workshop') ? 'Workshop' : 'Classroom'
+          
           batch.set(doc(db, "rooms", roomId), { 
             id: roomId, 
             name: row.roomName, 
             capacity: 30, 
             campus,
             siteName: row.siteName,
-            address: site?.address || "",
-            type: (site?.type as RoomType) || 'Classroom'
+            address: row.siteName, // Use the provided location string as the address if specific
+            type: roomType
           }, { merge: true })
           processedRooms.add(roomId)
         }
@@ -259,6 +261,7 @@ export default function DataEntryPage() {
       await batch.commit()
       toast({ title: "Sync Complete", description: `Processed ${parsedData.length} unique records.` })
     } catch (e) {
+      console.error("SYNC FAILURE:", e)
       toast({ variant: "destructive", title: "Sync Failed" })
     } finally {
       setIsProcessing(false)
@@ -295,7 +298,7 @@ export default function DataEntryPage() {
     <div className="flex-1 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight font-headline">Data Manager</h2>
+          <h2 className="text-3xl font-bold tracking-tight font-headline text-primary">Data Manager</h2>
           <p className="text-muted-foreground text-sm">Bulk manage records via Excel (9 columns) or raw JSON access.</p>
         </div>
         <div className="flex gap-2">
@@ -342,7 +345,7 @@ export default function DataEntryPage() {
               </CardHeader>
               <CardContent className="flex-1 min-h-0">
                 <Textarea 
-                  placeholder="Ultimo	Ultimo Campus (Theory)	ADCCD B1	Monday	Bharath	Bharath@novus.edu.au	9:30:00 AM	4:00:00 PM	Makalu"
+                  placeholder="Ultimo	Level 3, Suite 3.09...	DBC	Wednesday	Bharath	Bharath@novus.edu.au	4:00 PM	10:30 PM	Makalu"
                   className="font-mono text-[10px] h-full resize-none bg-muted/20 focus:bg-background transition-colors"
                   value={rawInput}
                   onChange={(e) => setRawInput(e.target.value)}
@@ -367,6 +370,7 @@ export default function DataEntryPage() {
                          <TableHead className="text-[10px]">Location</TableHead>
                          <TableHead className="text-[10px]">Subject</TableHead>
                          <TableHead className="text-[10px]">Trainer</TableHead>
+                         <TableHead className="text-[10px]">Day</TableHead>
                          <TableHead className="text-[10px]">Time</TableHead>
                          <TableHead className="text-[10px]">Class_name</TableHead>
                        </TableRow>
@@ -375,11 +379,12 @@ export default function DataEntryPage() {
                        {parsedData.map((row: any, i) => (
                          <TableRow key={i}>
                            <TableCell className="text-[10px] font-bold">{row.campus}</TableCell>
-                           <TableCell className="text-[10px] whitespace-nowrap">{row.siteName}</TableCell>
+                           <TableCell className="text-[10px] whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px]">{row.siteName}</TableCell>
                            <TableCell className="text-[10px]">{row.unit}</TableCell>
                            <TableCell className="text-[10px]">{row.trainer}</TableCell>
-                           <TableCell className="text-[10px] font-mono whitespace-nowrap">{row.day} {row.start}-{row.finish}</TableCell>
-                           <TableCell className="text-[10px] font-black">{row.roomName}</TableCell>
+                           <TableCell className="text-[10px]">{row.day}</TableCell>
+                           <TableCell className="text-[10px] font-mono whitespace-nowrap">{row.start}-{row.finish}</TableCell>
+                           <TableCell className="text-[10px] font-black text-primary">{row.roomName}</TableCell>
                          </TableRow>
                        ))}
                      </TableBody>
