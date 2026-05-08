@@ -158,6 +158,9 @@ export default function ConflictsPage() {
     const conflicts: ConflictItem[] = []
     if (!sessions || !teachers || !units) return conflicts
 
+    // Use a Set to avoid duplicate conflicts between the same two sessions
+    const addedConflictIds = new Set<string>()
+
     // Filter out sessions that have already been acknowledged
     const activeSessions = sessions.filter(s => !s.acknowledged)
 
@@ -174,18 +177,22 @@ export default function ConflictsPage() {
 
       // 1. Trainer Qualification Check
       if (teacher && unit && !teacher.qualifiedUnits.includes(unit.id)) {
-        conflicts.push({
-          id: `qual-${s.id}`,
-          level: 'high',
-          type: 'Qualification Mismatch',
-          message: `${teacher.name} is not qualified for ${unit.name}`,
-          details: `Institutional safety rule: Trainers must be certified for the specific unit code they deliver.`,
-          day: s.day,
-          time: s.startTime,
-          involvedSessionIds: [s.id],
-          teacherId: s.teacherId,
-          unitId: unit.id
-        })
+        const qid = `qual-${s.id}`
+        if (!addedConflictIds.has(qid)) {
+          conflicts.push({
+            id: qid,
+            level: 'high',
+            type: 'Qualification Mismatch',
+            message: `${teacher.name} is not qualified for ${unit.name}`,
+            details: `Institutional safety rule: Trainers must be certified for the specific unit code they deliver.`,
+            day: s.day,
+            time: s.startTime,
+            involvedSessionIds: [s.id],
+            teacherId: s.teacherId,
+            unitId: unit.id
+          })
+          addedConflictIds.add(qid)
+        }
       }
 
       // 2. Double Booking Detection (Trainer & Room)
@@ -200,17 +207,22 @@ export default function ConflictsPage() {
           if (!teacherUsage[s.teacherId]) teacherUsage[s.teacherId] = []
           const existing = teacherUsage[s.teacherId].find(u => u.slot === slotKey)
           if (existing) {
-            conflicts.push({
-              id: `overlap-t-${s.id}-${existing.sessionId}`,
-              level: 'high',
-              type: 'Trainer Overlap',
-              message: `${teacher?.name || s.teacherId} is double-booked`,
-              details: `Trainer is scheduled for multiple classes simultaneously. Legally, a trainer can only be in one place at one time.`,
-              day: s.day,
-              time: `${h}:00`,
-              involvedSessionIds: [existing.sessionId, s.id],
-              teacherId: s.teacherId
-            })
+            // Sort IDs to ensure consistency A-B vs B-A
+            const conflictId = `overlap-t-${[s.id, existing.sessionId].sort().join('-')}`
+            if (!addedConflictIds.has(conflictId)) {
+              conflicts.push({
+                id: conflictId,
+                level: 'high',
+                type: 'Trainer Overlap',
+                message: `${teacher?.name || s.teacherId} is double-booked`,
+                details: `Trainer is scheduled for multiple classes simultaneously. Legally, a trainer can only be in one place at one time.`,
+                day: s.day,
+                time: `${h}:00`,
+                involvedSessionIds: [existing.sessionId, s.id],
+                teacherId: s.teacherId
+              })
+              addedConflictIds.add(conflictId)
+            }
           }
           teacherUsage[s.teacherId].push({ slot: slotKey, sessionId: s.id })
         }
@@ -221,16 +233,20 @@ export default function ConflictsPage() {
           if (!roomUsage[roomKey]) roomUsage[roomKey] = []
           const existing = roomUsage[roomKey].find(u => u.slot === slotKey)
           if (existing) {
-            conflicts.push({
-              id: `overlap-r-${s.id}-${existing.sessionId}`,
-              level: 'high',
-              type: 'Room Overlap',
-              message: `${s.room} is double-booked`,
-              details: `Physical capacity conflict. Only one class can feasibly run in ${s.room} at any given time.`,
-              day: s.day,
-              time: `${h}:00`,
-              involvedSessionIds: [existing.sessionId, s.id]
-            })
+            const conflictId = `overlap-r-${[s.id, existing.sessionId].sort().join('-')}`
+            if (!addedConflictIds.has(conflictId)) {
+              conflicts.push({
+                id: conflictId,
+                level: 'high',
+                type: 'Room Overlap',
+                message: `${s.room} is double-booked`,
+                details: `Physical capacity conflict. Only one class can feasibly run in ${s.room} at any given time.`,
+                day: s.day,
+                time: `${h}:00`,
+                involvedSessionIds: [existing.sessionId, s.id]
+              })
+              addedConflictIds.add(conflictId)
+            }
           }
           roomUsage[roomKey].push({ slot: slotKey, sessionId: s.id })
         }
@@ -242,32 +258,40 @@ export default function ConflictsPage() {
       if (s.campus === 'Gosford') {
         const finishH = parseInt(s.endTime.split(':')[0])
         if (finishH >= 17) {
-          conflicts.push({
-            id: `gosford-${s.id}`,
-            level: 'mid',
-            type: 'Institutional Constraint',
-            message: `Gosford class ends after 5:00 PM`,
-            details: `Buses in Gosford stop at 5pm. Institutional rule requires classes to finish earlier for student safety.`,
-            day: s.day,
-            time: s.startTime,
-            involvedSessionIds: [s.id]
-          })
+          const gid = `gosford-${s.id}`
+          if (!addedConflictIds.has(gid)) {
+            conflicts.push({
+              id: gid,
+              level: 'mid',
+              type: 'Institutional Constraint',
+              message: `Gosford class ends after 5:00 PM`,
+              details: `Buses in Gosford stop at 5pm. Institutional rule requires classes to finish earlier for student safety.`,
+              day: s.day,
+              time: s.startTime,
+              involvedSessionIds: [s.id]
+            })
+            addedConflictIds.add(gid)
+          }
         }
       }
 
       // 4. Capacity vs Type Check
       if (room && unit) {
         if (unit.type === 'theory' && room.capacity < 15) {
-          conflicts.push({
-            id: `cap-${s.id}`,
-            level: 'mid',
-            type: 'Capacity Warning',
-            message: `Room ${s.room} might be too small for Theory`,
-            details: `Standard Theory classes aim for 30 students. This room only holds ${room.capacity}.`,
-            day: s.day,
-            time: s.startTime,
-            involvedSessionIds: [s.id]
-          })
+          const cid = `cap-${s.id}`
+          if (!addedConflictIds.has(cid)) {
+            conflicts.push({
+              id: cid,
+              level: 'mid',
+              type: 'Capacity Warning',
+              message: `Room ${s.room} might be too small for Theory`,
+              details: `Standard Theory classes aim for 30 students. This room only holds ${room.capacity}.`,
+              day: s.day,
+              time: s.startTime,
+              involvedSessionIds: [s.id]
+            })
+            addedConflictIds.add(cid)
+          }
         }
       }
 
@@ -278,16 +302,20 @@ export default function ConflictsPage() {
       if (!unitMergeCheck[mergeKey]) unitMergeCheck[mergeKey] = []
       const potentialMerge = unitMergeCheck[mergeKey].find(m => m.room !== s.room)
       if (potentialMerge) {
-        conflicts.push({
-          id: `merge-${s.id}-${potentialMerge.sessionId}`,
-          level: 'low',
-          type: 'Resource Optimization',
-          message: `Potential Unit Merge: ${unit?.name}`,
-          details: `Same unit is running in different rooms at the same time. Consider merging batches to save trainer hours if student count allows.`,
-          day: s.day,
-          time: s.startTime,
-          involvedSessionIds: [potentialMerge.sessionId, s.id]
-        })
+        const mid = `merge-${[s.id, potentialMerge.sessionId].sort().join('-')}`
+        if (!addedConflictIds.has(mid)) {
+          conflicts.push({
+            id: mid,
+            level: 'low',
+            type: 'Resource Optimization',
+            message: `Potential Unit Merge: ${unit?.name}`,
+            details: `Same unit is running in different rooms at the same time. Consider merging batches to save trainer hours if student count allows.`,
+            day: s.day,
+            time: s.startTime,
+            involvedSessionIds: [potentialMerge.sessionId, s.id]
+          })
+          addedConflictIds.add(mid)
+        }
       }
       unitMergeCheck[mergeKey].push({ day: s.day, startTime: s.startTime, room: s.room, sessionId: s.id })
     })
