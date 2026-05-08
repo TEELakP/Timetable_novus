@@ -160,13 +160,12 @@ export default function DataEntryPage() {
     
     setIsProcessing(true)
     try {
-      // We explicitly query the database directly instead of relying on React state
-      // to ensure we get everything even if hooks are still loading.
       const collectionPaths = [
         "teachers",
         "academicUnits",
         "rooms",
         "schedulingRules",
+        "timetables",
         `timetables/${ACTIVE_TIMETABLE_ID}/classSessions`
       ];
 
@@ -177,7 +176,8 @@ export default function DataEntryPage() {
         const snapshot = await getDocs(colRef);
         const docs = snapshot.docs;
 
-        // Firestore batch limits are 500. We chunk into groups of 400.
+        if (docs.length === 0) continue;
+
         for (let i = 0; i < docs.length; i += 400) {
           const batch = writeBatch(db);
           const chunk = docs.slice(i, i + 400);
@@ -193,7 +193,7 @@ export default function DataEntryPage() {
 
       toast({ 
         title: "Database Wiped", 
-        description: `Successfully removed ${totalDeleted} entries from the database.` 
+        description: `Successfully removed ${totalDeleted} entries across all targeted collections.` 
       });
     } catch (e: any) {
       console.error("Wipe failed:", e);
