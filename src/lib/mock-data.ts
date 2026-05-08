@@ -9,18 +9,18 @@ export const HOURS = Array.from({ length: 24 }, (_, i) => `${i.toString().padSta
 // Configuration for site hierarchy and addresses
 export const SITES_CONFIG = {
   Ultimo: [
-    { name: 'Ultimo Campus (Theory)', type: 'Classroom', address: 'Level 3, 22/36 Mountain St, Ultimo NSW 2007' },
+    { name: 'Ultimo Campus (Theory)', type: 'Classroom', address: 'Level 3, 22/36 Mountain St, Ultimo NSW 2007', rooms: ['Makalu', 'Everest', 'Kilimanjaro', 'Kosciuscko', 'Kanchenjunga', 'Suite 1.15'] },
     { name: 'Ultimo Kitchen', type: 'Workshop', address: 'Shop 7/68 Mountain St, Ultimo NSW 2007' },
     { name: 'Ultimo Workshop (Automotive)', type: 'Workshop', address: '145 Gilba Road, Girraween NSW' },
     { name: 'Ultimo Workshop (Trade)', type: 'Workshop', address: '8 Kendall St, Granville NSW' }
   ],
   Gosford: [
-    { name: 'Gosford Campus (Theory)', type: 'Classroom', address: '153 Mann Street, Level 1, Suite 5, Gosford NSW 2250' },
+    { name: 'Gosford Campus (Theory)', type: 'Classroom', address: '153 Mann Street, Level 1, Suite 5, Gosford NSW 2250', rooms: ['A1', 'A2', 'A3', 'A4'] },
     { name: 'Gosford Kitchen', type: 'Workshop', address: '5/131 Henry Parry Drive, Gosford' },
     { name: 'Gosford Workshop', type: 'Workshop', address: '2/3 Luke Close, West Gosford' }
   ],
   Perth: [
-    { name: 'Perth Campus (Theory)', type: 'Classroom', address: 'Unit 53 188 Newcastle St, PERTH WA 6000' }
+    { name: 'Perth Campus (Theory)', type: 'Classroom', address: 'Unit 53 188 Newcastle St, PERTH WA 6000', rooms: ['A1', 'A2', 'A3', 'A4'] }
   ],
   Online: [
     { name: 'Virtual Campus', type: 'Classroom', address: 'Remote' }
