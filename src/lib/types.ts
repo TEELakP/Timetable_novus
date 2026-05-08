@@ -1,6 +1,7 @@
 
 export type Day = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
 export type Campus = 'Ultimo' | 'Gosford' | 'Perth' | 'Online';
+export type RoomType = 'Classroom' | 'Workshop';
 
 export interface TeacherAvailability {
   day: Day;
@@ -32,6 +33,7 @@ export interface Room {
   campus: Campus;
   siteName: string; // e.g., 'Main Campus', 'Kitchen', 'Workshop'
   address?: string;
+  type: RoomType;
 }
 
 export interface TimetableEntry {
