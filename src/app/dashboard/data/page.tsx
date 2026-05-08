@@ -1,4 +1,3 @@
-
 "use client"
 
 import React, { useState, useMemo, useEffect } from "react"
@@ -141,7 +140,7 @@ export default function DataEntryPage() {
     setIsWipeDialogOpen(false)
     
     try {
-      // EXCLUDE rooms from the wipe as per requirements
+      // EXCLUDE rooms from the wipe to keep hierarchy persistent
       const targetCollections = ["teachers", "academicUnits", "schedulingRules", "timetables"];
       let totalDeleted = 0;
 
@@ -246,38 +245,6 @@ export default function DataEntryPage() {
     }
   }
 
-  const handleSeedRooms = async () => {
-    setIsProcessing(true)
-    const batch = writeBatch(db)
-    let count = 0
-
-    try {
-      Object.entries(SITES_CONFIG).forEach(([campus, sites]) => {
-        sites.forEach(site => {
-          site.rooms.forEach(roomName => {
-            const id = `r-${campus}-${roomName}`.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-            batch.set(doc(db, "rooms", id), {
-              id,
-              name: roomName,
-              campus: campus as Campus,
-              siteName: site.name,
-              address: site.address,
-              capacity: 30,
-              type: site.type as RoomType
-            }, { merge: true })
-            count++
-          })
-        })
-      })
-      await batch.commit()
-      toast({ title: "Institutional Rooms Created", description: `Seeded ${count} persistent rooms across all sites.` })
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Seeding Failed" })
-    } finally {
-      setIsProcessing(false)
-    }
-  }
-
   return (
     <div className="flex-1 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -286,13 +253,6 @@ export default function DataEntryPage() {
           <p className="text-muted-foreground text-sm">8-column Excel Sync & Institutional Hierarchy Reference.</p>
         </div>
         <div className="flex gap-2">
-           <Button 
-             variant="outline" 
-             onClick={handleSeedRooms} 
-             disabled={isProcessing || isUserLoading}
-           >
-             <Server className="mr-2 h-4 w-4" /> Seed Rooms
-           </Button>
            <Button 
              variant="destructive" 
              onClick={() => setIsWipeDialogOpen(true)} 
