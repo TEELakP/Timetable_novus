@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect } from "react"
 import { 
   Database, 
   Trash2, 
@@ -10,18 +10,27 @@ import {
   AlertCircle,
   Loader2,
   Table as TableIcon,
-  ChevronRight
+  ChevronRight,
+  Code2,
+  FileSpreadsheet,
+  Save,
+  FileJson
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, writeBatch } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { Campus, Day, Teacher, Unit, Room, TimetableEntry } from "@/lib/types"
 
 const ACTIVE_TIMETABLE_ID = "default-timetable"
+
+type DataMode = 'excel' | 'json'
+type EntityType = 'teachers' | 'academicUnits' | 'rooms' | 'sessions'
 
 export default function DataEntryPage() {
   const { toast } = useToast()
@@ -32,13 +41,27 @@ export default function DataEntryPage() {
   const roomsRef = useMemoFirebase(() => collection(db, "rooms"), [db])
   const sessionsRef = useMemoFirebase(() => collection(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions"), [db])
   
-  const { data: teachers } = useCollection<Teacher>(teachersRef)
-  const { data: units } = useCollection<Unit>(unitsRef)
-  const { data: rooms } = useCollection<Room>(roomsRef)
-  const { data: sessions } = useCollection<TimetableEntry>(sessionsRef)
+  const { data: teachers, isLoading: loadingTeachers } = useCollection<Teacher>(teachersRef)
+  const { data: units, isLoading: loadingUnits } = useCollection<Unit>(unitsRef)
+  const { data: rooms, isLoading: loadingRooms } = useCollection<Room>(roomsRef)
+  const { data: sessions, isLoading: loadingSessions } = useCollection<TimetableEntry>(sessionsRef)
 
+  const [mode, setMode] = useState<DataMode>('excel')
+  const [selectedEntity, setSelectedEntity] = useState<EntityType>('teachers')
+  const [jsonInput, setJsonInput] = useState("")
   const [rawInput, setRawInput] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
+
+  // Initialize JSON input when entity or data changes
+  useEffect(() => {
+    let currentData: any[] = []
+    if (selectedEntity === 'teachers') currentData = teachers || []
+    if (selectedEntity === 'academicUnits') currentData = units || []
+    if (selectedEntity === 'rooms') currentData = rooms || []
+    if (selectedEntity === 'sessions') currentData = sessions || []
+    
+    setJsonInput(JSON.stringify(currentData, null, 2))
+  }, [selectedEntity, teachers, units, rooms, sessions])
 
   const parseTime = (timeStr: string) => {
     if (!timeStr) return "09:00"
@@ -59,7 +82,6 @@ export default function DataEntryPage() {
   const parsedData = useMemo(() => {
     if (!rawInput.trim()) return []
     const lines = rawInput.split('\n').filter(l => l.trim() !== "")
-    // Detect if first line is header
     const startIdx = lines[0].toLowerCase().includes('trainer') || lines[0].toLowerCase().includes('class') ? 1 : 0
     
     return lines.slice(startIdx).map((line, idx) => {
@@ -80,7 +102,7 @@ export default function DataEntryPage() {
   }, [rawInput])
 
   const handleClearDatabase = async () => {
-    if (!confirm("DANGER: This will delete ALL current institutional data including Teachers, Units, and Sessions. Continue?")) return
+    if (!confirm("DANGER: This will delete ALL current institutional data including Teachers, Units, Rooms and Sessions. Continue?")) return
     setIsProcessing(true)
     const batch = writeBatch(db)
     try {
@@ -89,7 +111,7 @@ export default function DataEntryPage() {
       rooms?.forEach(r => batch.delete(doc(db, "rooms", r.id)))
       sessions?.forEach(s => batch.delete(doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id)))
       await batch.commit()
-      toast({ title: "Database Wiped", description: "You can now paste your new data." })
+      toast({ title: "Database Wiped", description: "All entities removed." })
     } catch (e) {
       toast({ variant: "destructive", title: "Error", description: "Could not clear database." })
     } finally {
@@ -97,7 +119,7 @@ export default function DataEntryPage() {
     }
   }
 
-  const handleSyncData = async () => {
+  const handleSyncExcel = async () => {
     if (parsedData.length === 0) return
     setIsProcessing(true)
     
@@ -160,9 +182,37 @@ export default function DataEntryPage() {
 
       await batch.commit()
       setRawInput("")
-      toast({ title: "Sync Complete", description: `Processed ${parsedData.length} records successfully.` })
+      toast({ title: "Sync Complete", description: `Processed ${parsedData.length} records.` })
     } catch (e) {
-      toast({ variant: "destructive", title: "Sync Failed", description: "Format error detected." })
+      toast({ variant: "destructive", title: "Sync Failed" })
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleSyncJson = async () => {
+    setIsProcessing(true)
+    try {
+      const data = JSON.parse(jsonInput)
+      if (!Array.isArray(data)) throw new Error("Data must be an array")
+      
+      const batch = writeBatch(db)
+      const collectionName = selectedEntity === 'sessions' 
+        ? `timetables/${ACTIVE_TIMETABLE_ID}/classSessions` 
+        : selectedEntity
+
+      data.forEach((item: any) => {
+        if (!item.id) return
+        const ref = selectedEntity === 'sessions'
+          ? doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", item.id)
+          : doc(db, selectedEntity, item.id)
+        batch.set(ref, item, { merge: true })
+      })
+
+      await batch.commit()
+      toast({ title: "JSON Update Complete", description: `Updated ${data.length} records in ${selectedEntity}.` })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Invalid JSON", description: e.message })
     } finally {
       setIsProcessing(false)
     }
@@ -170,100 +220,140 @@ export default function DataEntryPage() {
 
   return (
     <div className="flex-1 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight font-headline">Institutional Data Entry</h2>
-          <p className="text-muted-foreground text-sm">Bulk manage your timetable directly from Excel sheets.</p>
+          <h2 className="text-3xl font-bold tracking-tight font-headline">Data Manager</h2>
+          <p className="text-muted-foreground text-sm">Bulk manage institutional records via Excel or raw JSON access.</p>
         </div>
         <div className="flex gap-2">
            <Button variant="outline" className="text-destructive border-destructive/20 hover:bg-destructive/5" onClick={handleClearDatabase} disabled={isProcessing}>
-             <Trash2 className="mr-2 h-4 w-4" /> Clear Master Database
+             <Trash2 className="mr-2 h-4 w-4" /> Wipe Database
            </Button>
-           <Button onClick={handleSyncData} disabled={isProcessing || parsedData.length === 0} className="bg-primary">
-             {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-             Sync {parsedData.length} Records
-           </Button>
+           {mode === 'excel' ? (
+             <Button onClick={handleSyncExcel} disabled={isProcessing || parsedData.length === 0} className="bg-primary">
+               {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+               Sync {parsedData.length} Rows
+             </Button>
+           ) : (
+             <Button onClick={handleSyncJson} disabled={isProcessing} className="bg-primary">
+               {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+               Save Raw Data
+             </Button>
+           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="h-full flex flex-col">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Database className="h-5 w-5 text-primary" />
-              Excel Copy-Paste Area
-            </CardTitle>
-            <CardDescription>
-              Copy rows from your spreadsheet (including Campus, Location, Class, Day, Trainer, etc.) and paste them here.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex-1">
-            <Textarea 
-              placeholder="Perth	Unit 53	ADCCD B2	Saturday	Asim	asim@novus.edu.au	9:30 AM	4:00 PM..."
-              className="font-mono text-[10px] min-h-[400px] h-full resize-none bg-muted/20 focus:bg-background transition-colors"
-              value={rawInput}
-              onChange={(e) => setRawInput(e.target.value)}
-            />
-          </CardContent>
-        </Card>
+      <Tabs value={mode} onValueChange={(v: any) => setMode(v)} className="space-y-6">
+        <div className="flex items-center justify-between bg-muted/30 p-1.5 rounded-lg w-fit border">
+          <TabsList className="bg-transparent">
+            <TabsTrigger value="excel" className="gap-2"><FileSpreadsheet className="h-4 w-4" /> Excel Paste</TabsTrigger>
+            <TabsTrigger value="json" className="gap-2"><Code2 className="h-4 w-4" /> Raw JSON Editor</TabsTrigger>
+          </TabsList>
+        </div>
 
-        <Card className="h-full flex flex-col overflow-hidden">
-          <CardHeader className="bg-muted/30 border-b">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <TableIcon className="h-5 w-5 text-primary" />
-              Preview & Validation
-            </CardTitle>
-            <CardDescription>
-              Check the parsed rows before committing them to the database.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0 overflow-auto">
-             {parsedData.length > 0 ? (
-               <Table>
-                 <TableHeader className="bg-muted/50 sticky top-0">
-                   <TableRow>
-                     <TableHead className="text-[10px]">Site</TableHead>
-                     <TableHead className="text-[10px]">Subject</TableHead>
-                     <TableHead className="text-[10px]">Day</TableHead>
-                     <TableHead className="text-[10px]">Time</TableHead>
-                   </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                   {parsedData.map((row: any, i) => (
-                     <TableRow key={i}>
-                       <TableCell className="text-[10px] font-bold">{row.campus}</TableCell>
-                       <TableCell className="text-[10px]">{row.unit}</TableCell>
-                       <TableCell className="text-[10px]">{row.day}</TableCell>
-                       <TableCell className="text-[10px] font-mono">{row.start}-{row.finish}</TableCell>
-                     </TableRow>
-                   ))}
-                 </TableBody>
-               </Table>
-             ) : (
-               <div className="flex flex-col items-center justify-center py-32 text-center px-8">
-                  <div className="p-4 rounded-full bg-muted mb-4">
-                     <AlertCircle className="h-10 w-10 text-muted-foreground" />
-                  </div>
-                  <h3 className="text-xl font-bold">No Data Detected</h3>
-                  <p className="text-sm text-muted-foreground mt-2 max-w-xs">
-                    Paste content from your Excel file to begin the automatic entity mapping process.
-                  </p>
-               </div>
-             )}
-          </CardContent>
-          {parsedData.length > 0 && (
-            <div className="p-4 bg-muted/30 border-t flex justify-between items-center">
-               <span className="text-xs font-bold text-muted-foreground flex items-center gap-1">
-                 <CheckCircle2 className="h-3 w-3 text-green-500" /> 
-                 {parsedData.length} records ready for processing
-               </span>
-               <div className="flex items-center text-[10px] text-primary font-black uppercase">
-                 Review Required <ChevronRight className="h-3 w-3" />
-               </div>
-            </div>
-          )}
-        </Card>
-      </div>
+        <TabsContent value="excel" className="space-y-6 mt-0">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card className="h-[500px] flex flex-col">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Database className="h-5 w-5 text-primary" />
+                  Excel Copy-Paste Area
+                </CardTitle>
+                <CardDescription>Paste your spreadsheet rows here.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 min-h-0">
+                <Textarea 
+                  placeholder="Perth	Room 1	Class A	Monday	John..."
+                  className="font-mono text-[10px] h-full resize-none bg-muted/20 focus:bg-background transition-colors"
+                  value={rawInput}
+                  onChange={(e) => setRawInput(e.target.value)}
+                />
+              </CardContent>
+            </Card>
+
+            <Card className="h-[500px] flex flex-col overflow-hidden">
+              <CardHeader className="bg-muted/30 border-b">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <TableIcon className="h-5 w-5 text-primary" />
+                  Preview & Mapping
+                </CardTitle>
+                <CardDescription>Verify the columns before syncing.</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0 overflow-auto flex-1">
+                 {parsedData.length > 0 ? (
+                   <Table>
+                     <TableHeader className="bg-muted/50 sticky top-0 z-10">
+                       <TableRow>
+                         <TableHead className="text-[10px]">Site</TableHead>
+                         <TableHead className="text-[10px]">Subject</TableHead>
+                         <TableHead className="text-[10px]">Day</TableHead>
+                         <TableHead className="text-[10px]">Time</TableHead>
+                       </TableRow>
+                     </TableHeader>
+                     <TableBody>
+                       {parsedData.map((row: any, i) => (
+                         <TableRow key={i}>
+                           <TableCell className="text-[10px] font-bold">{row.campus}</TableCell>
+                           <TableCell className="text-[10px]">{row.unit}</TableCell>
+                           <TableCell className="text-[10px]">{row.day}</TableCell>
+                           <TableCell className="text-[10px] font-mono">{row.start}-{row.finish}</TableCell>
+                         </TableRow>
+                       ))}
+                     </TableBody>
+                   </Table>
+                 ) : (
+                   <div className="flex flex-col items-center justify-center h-full text-center px-8 text-muted-foreground">
+                      <FileSpreadsheet className="h-12 w-12 mb-4 opacity-20" />
+                      <p className="text-sm">No spreadsheet data detected in the paste area.</p>
+                   </div>
+                 )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="json" className="space-y-6 mt-0">
+          <Card className="border-primary/20 bg-primary/5">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div className="space-y-1">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileJson className="h-5 w-5 text-primary" />
+                  Raw Data Access
+                </CardTitle>
+                <CardDescription>Directly edit the JSON files stored in the database.</CardDescription>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight">Select Data File:</span>
+                <Select value={selectedEntity} onValueChange={(v: EntityType) => setSelectedEntity(v)}>
+                  <SelectTrigger className="w-[200px] bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="teachers">Teachers Directory</SelectItem>
+                    <SelectItem value="academicUnits">Units Catalog</SelectItem>
+                    <SelectItem value="rooms">Rooms List</SelectItem>
+                    <SelectItem value="sessions">Class Sessions</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="relative group">
+                <div className="absolute top-4 right-4 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+                   <Badge variant="secondary" className="font-mono text-[10px]">READ/WRITE ACCESS</Badge>
+                </div>
+                <Textarea 
+                  value={jsonInput}
+                  onChange={(e) => setJsonInput(e.target.value)}
+                  className="font-mono text-[11px] min-h-[600px] bg-black text-green-400 focus:text-green-300 border-primary/30 leading-relaxed"
+                  placeholder="[{ 'id': '...', ... }]"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
+
