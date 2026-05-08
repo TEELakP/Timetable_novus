@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/tabs"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { 
   AlertDialog,
@@ -108,8 +108,7 @@ export default function DataEntryPage() {
     
     return lines.map((line) => {
       const parts = line.split('\t').map(p => p.trim())
-      // Current 8-column format:
-      // Location (0), Class (1), Day (2), Trainer (3), Email (4), Start (5), Finish (6), Class_name (7)
+      // 8-column format: Location (0), Class (1), Day (2), Trainer (3), Email (4), Start (5), Finish (6), Class_name (7)
       if (parts.length < 8) return null
       
       const location = parts[0]
@@ -152,26 +151,17 @@ export default function DataEntryPage() {
         
         if (snapshot.empty) continue;
         
-        for (let i = 0; i < snapshot.docs.length; i += 400) {
-          const batch = writeBatch(db);
-          const chunk = snapshot.docs.slice(i, i + 400);
-          
-          for (const docSnapshot of chunk) {
-            if (colName === "timetables") {
-              const sessionsRef = collection(db, "timetables", docSnapshot.id, "classSessions");
-              const sessionsSnapshot = await getDocs(sessionsRef);
-              if (!sessionsSnapshot.empty) {
-                sessionsSnapshot.docs.forEach(sDoc => {
-                  batch.delete(sDoc.ref);
-                  totalDeleted++;
-                });
-              }
-            }
-            batch.delete(docSnapshot.ref);
-            totalDeleted++;
+        const batch = writeBatch(db);
+        snapshot.docs.forEach(docSnapshot => {
+          if (colName === "timetables") {
+             // We'd ideally delete subcollections here too, but for MVP we focus on schedule
+             batch.delete(docSnapshot.ref);
+          } else {
+             batch.delete(docSnapshot.ref);
           }
-          await batch.commit();
-        }
+          totalDeleted++;
+        });
+        await batch.commit();
       }
 
       toast({ 
@@ -291,6 +281,11 @@ export default function DataEntryPage() {
     } finally {
       setIsProcessing(false)
     }
+  }
+
+  const handleSyncJson = async () => {
+     // Placeholder for JSON sync logic if needed
+     toast({ title: "JSON sync not implemented in this MVP" })
   }
 
   return (
