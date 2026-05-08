@@ -173,14 +173,27 @@ export default function TimetablePage() {
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
 
   const filteredSessions = useMemo(() => {
-    if (!sessions || !teachers) return []
+    if (!sessions || !teachers || !units) return []
     
+    // Aggressive filtering of invalid or placeholder data
     let data = sessions.filter(s => {
       const teacher = teachers.find(t => t.id === s.teacherId)
-      const isPlaceholder = s.teacherId.toLowerCase().includes('unassigned') || 
-                          s.teacherId.toLowerCase().includes('n/a') || 
-                          s.teacherId.trim() === ''
-      return !!teacher && !isPlaceholder
+      const unit = units.find(u => u.id === s.unitId)
+      
+      const isInvalidTeacher = !s.teacherId || 
+                             s.teacherId.toLowerCase().includes('unassigned') || 
+                             s.teacherId.toLowerCase().includes('n/a') || 
+                             s.teacherId.toLowerCase().includes('unknown') ||
+                             s.teacherId.trim() === ''
+      
+      const isInvalidUnit = !s.unitId || 
+                           s.unitId.toLowerCase().includes('unassigned') || 
+                           s.unitId.toLowerCase().includes('n/a') || 
+                           s.unitId.toLowerCase().includes('unknown') ||
+                           s.unitId.trim() === ''
+
+      // Valid if it's not a placeholder AND the linked resource actually exists in DB
+      return !!teacher && !isInvalidTeacher && !!unit && !isInvalidUnit
     })
     
     if (selectedCampuses.length > 0) {
@@ -205,7 +218,7 @@ export default function TimetablePage() {
       if (dayIndexA !== dayIndexB) return dayIndexA - dayIndexB
       return a.startTime.localeCompare(b.startTime)
     })
-  }, [sessions, teachers, selectedCampuses, selectedTeachers, selectedUnits, selectedTypes, selectedDays, rooms, units])
+  }, [sessions, teachers, units, selectedCampuses, selectedTeachers, selectedUnits, selectedTypes, selectedDays, rooms])
 
   const sessionsByDay = useMemo(() => {
     const grouped: Record<string, TimetableEntry[]> = {}

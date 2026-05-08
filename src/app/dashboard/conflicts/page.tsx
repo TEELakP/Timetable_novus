@@ -17,7 +17,8 @@ import {
   BookOpen,
   Settings2,
   Trash2,
-  XCircle
+  XCircle,
+  Ghost
 } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -172,18 +173,32 @@ export default function ConflictsPage() {
     const roomUsage: Record<string, { slot: string, sessionId: string }[]> = {}
 
     activeSessions.forEach(s => {
-      // 1. Detect Missing Teacher
-      const teacher = teachers.find(t => t.id === s.teacherId)
-      const isPlaceholder = s.teacherId.toLowerCase().includes('unassigned') || 
-                          s.teacherId.toLowerCase().includes('n/a') || 
-                          s.teacherId.trim() === ''
+      const isInvalidTeacher = !s.teacherId || 
+                             s.teacherId.toLowerCase().includes('unassigned') || 
+                             s.teacherId.toLowerCase().includes('n/a') || 
+                             s.teacherId.toLowerCase().includes('unknown') ||
+                             s.teacherId.trim() === ''
       
-      if (!teacher || isPlaceholder) {
-        const unit = units?.find(u => u.id === s.unitId)
+      const isInvalidUnit = !s.unitId || 
+                           s.unitId.toLowerCase().includes('unassigned') || 
+                           s.unitId.toLowerCase().includes('n/a') || 
+                           s.unitId.toLowerCase().includes('unknown') ||
+                           s.unitId.trim() === ''
+
+      const teacher = teachers.find(t => t.id === s.teacherId)
+      const unit = units?.find(u => u.id === s.unitId)
+      
+      // 1. Detect Missing/Placeholder Resources (Phantoms)
+      if (isInvalidTeacher || !teacher || isInvalidUnit || !unit) {
+        let msg = "Phantom Session Detected"
+        if (isInvalidTeacher || !teacher) msg = "Unassigned Trainer"
+        if (isInvalidUnit || !unit) msg = "Unknown Subject Entry"
+        if ((isInvalidTeacher || !teacher) && (isInvalidUnit || !unit)) msg = "Corrupt Schedule Entry"
+
         conflicts.push({
           type: 'missing-resource',
-          message: `Unassigned Trainer`,
-          details: `The class "${unit?.name || 'Unknown'}" has no valid trainer assigned. It will not appear in the Overview until resolved.`,
+          message: msg,
+          details: `This session involves an invalid or placeholder reference. Subject: "${unit?.name || s.unitId || 'Unknown'}", Trainer: "${teacher?.name || s.teacherId || 'Unknown'}". It is hidden from Overview.`,
           day: s.day,
           time: s.startTime,
           involvedSessionIds: [s.id],
@@ -198,7 +213,7 @@ export default function ConflictsPage() {
       for (let h = start; h < end; h++) {
         const slotKey = `${s.day}-${h.toString().padStart(2, '0')}:00`
         
-        if (s.teacherId && !isPlaceholder) {
+        if (s.teacherId && !isInvalidTeacher && teacher) {
           if (!teacherUsage[s.teacherId]) teacherUsage[s.teacherId] = []
           const existingTeacherSlot = teacherUsage[s.teacherId].find(u => u.slot === slotKey)
           
@@ -268,21 +283,32 @@ export default function ConflictsPage() {
     setIsPurging(true)
     const batch = writeBatch(db)
     
-    const unassignedSessions = sessions.filter(s => {
-      const isPlaceholder = s.teacherId.toLowerCase().includes('unassigned') || 
-                          s.teacherId.toLowerCase().includes('n/a') || 
-                          s.teacherId.trim() === ''
+    const invalidSessions = sessions.filter(s => {
+      const isInvalidTeacher = !s.teacherId || 
+                             s.teacherId.toLowerCase().includes('unassigned') || 
+                             s.teacherId.toLowerCase().includes('n/a') || 
+                             s.teacherId.toLowerCase().includes('unknown') ||
+                             s.teacherId.trim() === ''
+      
+      const isInvalidUnit = !s.unitId || 
+                           s.unitId.toLowerCase().includes('unassigned') || 
+                           s.unitId.toLowerCase().includes('n/a') || 
+                           s.unitId.toLowerCase().includes('unknown') ||
+                           s.unitId.trim() === ''
+
       const teacher = teachers?.find(t => t.id === s.teacherId)
-      return isPlaceholder || !teacher
+      const unit = units?.find(u => u.id === s.unitId)
+
+      return isInvalidTeacher || !teacher || isInvalidUnit || !unit
     })
 
     try {
-      unassignedSessions.forEach(s => {
+      invalidSessions.forEach(s => {
         const ref = doc(db, "timetables", ACTIVE_TIMETABLE_ID, "classSessions", s.id)
         batch.delete(ref)
       })
       await batch.commit()
-      toast({ title: "Purge Complete", description: `Removed ${unassignedSessions.length} unassigned sessions.` })
+      toast({ title: "Purge Complete", description: `Permanently removed ${invalidSessions.length} invalid entries.` })
     } catch (e) {
       toast({ variant: "destructive", title: "Purge Failed" })
     } finally {
@@ -325,8 +351,8 @@ export default function ConflictsPage() {
             onClick={() => setIsPurgeDialogOpen(true)}
             disabled={isPurging}
           >
-            {isPurging ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-            Purge {unassignedCount} Unassigned
+            {isPurging ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ghost className="mr-2 h-4 w-4" />}
+            Purge {unassignedCount} Phantom Entries
           </Button>
         )}
       </div>
@@ -444,9 +470,9 @@ export default function ConflictsPage() {
       <AlertDialog open={isPurgeDialogOpen} onOpenChange={setIsPurgeDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Purge All Unassigned Sessions?</AlertDialogTitle>
+            <AlertDialogTitle>Purge All Invalid Entries?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete {unassignedCount} sessions that currently have no trainer assigned. This cannot be undone.
+              This will permanently delete {unassignedCount} sessions that are missing valid subject or trainer assignments. This includes "Unknown", "N/A", and "Unassigned" entries. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
